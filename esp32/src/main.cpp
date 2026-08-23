@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -49,23 +50,6 @@ const char* WIFI_PASSWORD = "elsenordelosanillos";
 // ============================================================
 //                  CONFIGURACIÓN FLASK
 // ============================================================
-//
-// IMPORTANTE:
-// SERVER_HOST debe ser la IP LOCAL de tu PC.
-//
-// Ejemplo:
-// ipconfig
-//
-// IPv4 Address . . . : 192.168.1.100
-//
-// Entonces:
-//
-// const char* SERVER_HOST = "192.168.1.100";
-//
-// NO pongas localhost.
-// NO pongas 127.0.0.1.
-//
-// ============================================================
 
 const char* SERVER_HOST = "26.48.233.11";
 
@@ -111,6 +95,11 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 const int FRECUENCIA = 5000;
 const int RESOLUCION = 8;
+
+// Canales PWM
+const int CANAL_ROJO  = 0;
+const int CANAL_VERDE = 1;
+const int CANAL_AZUL  = 2;
 
 
 // ============================================================
@@ -175,54 +164,58 @@ int aoBase = 0;
 
 void ledApagado() {
 
-  ledcWrite(LED_ROJO, 0);
-  ledcWrite(LED_VERDE, 0);
-  ledcWrite(LED_AZUL, 0);
+  ledcWrite(CANAL_ROJO, 0);
+  ledcWrite(CANAL_VERDE, 0);
+  ledcWrite(CANAL_AZUL, 0);
 
 }
 
 
 void ledVerde() {
 
-  ledcWrite(LED_ROJO, 0);
-  ledcWrite(LED_VERDE, 255);
-  ledcWrite(LED_AZUL, 0);
+  ledcWrite(CANAL_ROJO, 0);
+  ledcWrite(CANAL_VERDE, 255);
+  ledcWrite(CANAL_AZUL, 0);
 
 }
 
 
 void ledRojo() {
 
-  ledcWrite(LED_ROJO, 255);
-  ledcWrite(LED_VERDE, 0);
-  ledcWrite(LED_AZUL, 0);
+  ledcWrite(CANAL_ROJO, 255);
+  ledcWrite(CANAL_VERDE, 0);
+  ledcWrite(CANAL_AZUL, 0);
 
 }
 
 
 void ledAzul() {
 
-  ledcWrite(LED_ROJO, 0);
-  ledcWrite(LED_VERDE, 0);
-  ledcWrite(LED_AZUL, 255);
+  ledcWrite(CANAL_ROJO, 0);
+  ledcWrite(CANAL_VERDE, 0);
+  ledcWrite(CANAL_AZUL, 255);
 
 }
 
 
 void ledAmarillo() {
 
-  ledcWrite(LED_ROJO, 255);
-  ledcWrite(LED_VERDE, 70);
-  ledcWrite(LED_AZUL, 0);
+  // ==========================================================
+  // AMARILLO CALIBRADO PARA TU LED
+  // ==========================================================
+
+  ledcWrite(CANAL_ROJO, 255);
+  ledcWrite(CANAL_VERDE, 70);
+  ledcWrite(CANAL_AZUL, 0);
 
 }
 
 
 void ledNaranjo() {
 
-  ledcWrite(LED_ROJO, 255);
-  ledcWrite(LED_VERDE, 25);
-  ledcWrite(LED_AZUL, 0);
+  ledcWrite(CANAL_ROJO, 255);
+  ledcWrite(CANAL_VERDE, 25);
+  ledcWrite(CANAL_AZUL, 0);
 
 }
 
@@ -396,10 +389,15 @@ void calibrarMQ2() {
     cantidad++;
 
     if (estadoDO == HIGH) {
+
       high++;
+
     }
+
     else {
+
       low++;
+
     }
 
     delay(250);
@@ -418,6 +416,7 @@ void calibrarMQ2() {
     estadoDONormal = HIGH;
 
   }
+
   else {
 
     estadoDONormal = LOW;
@@ -449,19 +448,27 @@ void calibrarMQ2() {
 int obtenerNivelHumo(int cambioAO, bool humoDO) {
 
   if (cambioAO >= HUMO_ALTO) {
+
     return 3;
+
   }
 
   if (cambioAO >= HUMO_MEDIO) {
+
     return 2;
+
   }
 
   if (cambioAO >= HUMO_BAJO) {
+
     return 1;
+
   }
 
   if (humoDO) {
+
     return 1;
+
   }
 
   return 0;
@@ -481,16 +488,19 @@ void imprimirNivelHumo(int nivelHumo) {
     Serial.println("NINGUNO");
 
   }
+
   else if (nivelHumo == 1) {
 
     Serial.println("BAJO");
 
   }
+
   else if (nivelHumo == 2) {
 
     Serial.println("MEDIO");
 
   }
+
   else {
 
     Serial.println("ALTO");
@@ -520,11 +530,13 @@ void mostrarCondiciones(
     Serial.println("TEMPERATURA CRITICA");
 
   }
+
   else if (temp >= TEMP_ALTA) {
 
     Serial.println("TEMPERATURA ALTA");
 
   }
+
   else if (temp >= TEMP_RIESGO) {
 
     Serial.println("TEMPERATURA ELEVADA");
@@ -537,11 +549,13 @@ void mostrarCondiciones(
     Serial.println("HUMEDAD CRITICAMENTE BAJA");
 
   }
+
   else if (hum <= HUMEDAD_BAJA) {
 
     Serial.println("HUMEDAD BAJA");
 
   }
+
   else if (hum <= HUMEDAD_RIESGO) {
 
     Serial.println("HUMEDAD REDUCIDA");
@@ -554,11 +568,13 @@ void mostrarCondiciones(
     Serial.println("HUMO ALTO DETECTADO");
 
   }
+
   else if (nivelHumo == 2) {
 
     Serial.println("HUMO MEDIO DETECTADO");
 
   }
+
   else if (nivelHumo == 1) {
 
     Serial.println("HUMO BAJO DETECTADO");
@@ -793,7 +809,10 @@ void conectarWiFi() {
 
   WiFi.mode(WIFI_STA);
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(
+    WIFI_SSID,
+    WIFI_PASSWORD
+  );
 
   Serial.print("Conectando");
 
@@ -825,6 +844,7 @@ void conectarWiFi() {
     Serial.println(serverUrl());
 
   }
+
   else {
 
     Serial.println("WIFI -> ERROR");
@@ -844,7 +864,9 @@ void comprobarWiFi() {
   static unsigned long ultimaComprobacion = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
+
     return;
+
   }
 
   if (
@@ -1051,16 +1073,19 @@ void autoTest() {
     Serial.println("DHT22 -> OK");
 
   }
+
   else {
 
     Serial.println("DHT22 -> ERROR");
 
   }
 
+
   Serial.println("MQ-2 AO -> SEÑAL RECIBIDA");
   Serial.println("MQ-2 DO -> SEÑAL RECIBIDA");
 
   Serial.println();
+
 
   ledVerde();
 
@@ -1101,23 +1126,40 @@ void setup() {
   // LED RGB
   // ==========================================================
 
-  ledcAttach(
+  ledcSetup(
+    CANAL_ROJO,
+    FRECUENCIA,
+    RESOLUCION
+  );
+
+  ledcSetup(
+    CANAL_VERDE,
+    FRECUENCIA,
+    RESOLUCION
+  );
+
+  ledcSetup(
+    CANAL_AZUL,
+    FRECUENCIA,
+    RESOLUCION
+  );
+
+
+  ledcAttachPin(
     LED_ROJO,
-    FRECUENCIA,
-    RESOLUCION
+    CANAL_ROJO
   );
 
-  ledcAttach(
+  ledcAttachPin(
     LED_VERDE,
-    FRECUENCIA,
-    RESOLUCION
+    CANAL_VERDE
   );
 
-  ledcAttach(
+  ledcAttachPin(
     LED_AZUL,
-    FRECUENCIA,
-    RESOLUCION
+    CANAL_AZUL
   );
+
 
   ledApagado();
 
