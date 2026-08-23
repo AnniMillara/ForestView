@@ -6,6 +6,13 @@
     <div class="form-grid">
         <div><label>Nombre *</label><input type="text" name="nombre" value="{{ estacion.nombre if estacion else '' }}" required></div>
         <div><label>Código *</label><input type="text" name="codigo" value="{{ estacion.codigo if estacion else '' }}" required></div>
+        {% if estacion %}
+        <div>
+            <label>API Key</label>
+            <input type="text" name="api_key" value="{{ estacion.api_key if estacion else '' }}">
+            <small style="color:#718078;font-size:8px;">Cambia solo si es necesario.</small>
+        </div>
+        {% endif %}
         <div><label>Zona</label>
             <select name="id_zona">
                 <option value="">Sin zona</option>

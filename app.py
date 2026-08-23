@@ -64,10 +64,10 @@ def inject_alertas_count():
     return {'alertas_activas_count': 0}
 
 # =====================================================================
-# INICIALIZACIÓN (sin estación de ejemplo)
+# INICIALIZACIÓN
 # =====================================================================
 def init_db():
-    """Crea usuario admin y usuarios de prueba si no existen."""
+    """Crea usuario admin, usuarios de prueba y ajusta tabla estaciones."""
     # Admin
     admin = db.get_one("SELECT id_usuario FROM usuarios WHERE nombre_usuario = %s", ('admin',))
     if not admin:
@@ -93,11 +93,17 @@ def init_db():
             """, (user, hash_pass, email, nombre, tipo))
             print(f"Usuario {user} creado ({user} / {pwd})")
 
+    # Asegurar que latitud y longitud acepten NULL (para auto-registro)
+    try:
+        db.execute_query("ALTER TABLE estaciones MODIFY latitud DECIMAL(10,8) NULL")
+        db.execute_query("ALTER TABLE estaciones MODIFY longitud DECIMAL(11,8) NULL")
+        print("✅ Tabla estaciones actualizada: latitud y longitud aceptan NULL")
+    except Exception as e:
+        print(f"⚠️ No se pudo modificar la tabla (quizás ya está): {e}")
+
     # Verificar que exista la configuración de radio_alerta
     if not db.get_one("SELECT clave FROM configuracion WHERE clave = 'radio_alerta'"):
         db.execute_query("INSERT INTO configuracion (clave, valor, descripcion) VALUES ('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria')")
-
-    # NO se crea estación de ejemplo automáticamente
 
 # =====================================================================
 # HELPERS DE NEGOCIO
@@ -232,9 +238,6 @@ def obtener_estacion_con_ultima_medicion(id_estacion):
         WHERE e.id_estacion = %s
     """, (id_estacion,))
 
-# =====================================================================
-# NUEVA FUNCIÓN PARA GENERAR CÓDIGO ALEATORIO
-# =====================================================================
 def generar_codigo_unico():
     """Genera un código hexadecimal de 8 caracteres que no exista en la BD."""
     while True:
@@ -242,9 +245,6 @@ def generar_codigo_unico():
         if not db.get_one("SELECT id_estacion FROM estaciones WHERE codigo = %s", (codigo,)):
             return codigo
 
-# =====================================================================
-# FUNCIÓN DE DISTANCIA (Haversine)
-# =====================================================================
 def calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371.0
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
@@ -396,13 +396,12 @@ def zonas():
     )
 
 # =====================================================================
-# GESTIÓN DE ESTACIONES (CRUD) - SOLO MUESTRA ACTIVAS
+# GESTIÓN DE ESTACIONES (CRUD)
 # =====================================================================
 @app.route('/estaciones')
 @login_required
 @admin_required
 def listar_estaciones():
-    # AHORA SOLO MUESTRA ESTACIONES ACTIVAS (activa=1)
     estaciones = db.get_all("""
         SELECT e.*, z.nombre as zona, es.nombre as estado_nombre
         FROM estaciones e
@@ -433,20 +432,23 @@ def nueva_estacion():
         if not nombre:
             flash('El nombre es obligatorio', 'danger')
             return redirect(url_for('nueva_estacion'))
-        # Si el usuario escribe "AUTO", generamos un código aleatorio
         if codigo.upper() == "AUTO":
             codigo = generar_codigo_unico()
         else:
-            # Verificar que el código ingresado no exista
             if db.get_one("SELECT id_estacion FROM estaciones WHERE codigo = %s", (codigo,)):
                 flash('El código ya está en uso. Elige otro o escribe "AUTO" para generar uno automático.', 'danger')
                 return redirect(url_for('nueva_estacion'))
         api_key = secrets.token_hex(16)
         try:
+            # Asegurar latitud y longitud no vacíos
+            if not latitud:
+                latitud = 0.0
+            if not longitud:
+                longitud = 0.0
             db.execute_query("""
                 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (nombre, codigo, api_key, id_zona or None, latitud or None, longitud or None, descripcion))
+            """, (nombre, codigo, api_key, id_zona or None, latitud, longitud, descripcion))
             flash(f'✅ Estación "{nombre}" creada exitosamente.\nCódigo: {codigo}\nAPI Key: {api_key}', 'success')
             registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {nombre} creada con código {codigo}")
             return redirect(url_for('listar_estaciones'))
@@ -545,7 +547,6 @@ def regenerar_api_key(id_estacion):
 def estacion_detalle(id_estacion):
     verificar_estaciones_offline()
     estacion = obtener_estacion_con_ultima_medicion(id_estacion)
-    # Si no existe o no está activa, redirigir
     if not estacion or not estacion['activa']:
         flash('Estación no encontrada o desactivada', 'danger')
         return redirect(url_for('dashboard'))
@@ -591,7 +592,7 @@ def estacion_detalle(id_estacion):
     )
 
 # =====================================================================
-# ALERTAS (con filtro activa)
+# ALERTAS
 # =====================================================================
 @app.route('/alertas')
 @login_required
@@ -686,7 +687,7 @@ def marcar_falsa_alerta(id_alerta):
     return redirect(request.referrer or url_for('alertas'))
 
 # =====================================================================
-# HISTORIAL Y SENSORES (con filtro activa)
+# HISTORIAL Y SENSORES
 # =====================================================================
 @app.route('/historial')
 @login_required
@@ -962,7 +963,7 @@ def admin():
     )
 
 # =====================================================================
-# API - INGESTA DE DATOS DE LA ESP32
+# API - INGESTA DE DATOS DE LA ESP32 (CON AUTO-REGISTRO)
 # =====================================================================
 @app.route('/api/estaciones/<codigo>/datos', methods=['POST'])
 def api_recibir_datos(codigo):
@@ -971,13 +972,43 @@ def api_recibir_datos(codigo):
         return jsonify({'error': 'Se esperaba JSON'}), 400
     if 'api_key' not in data:
         return jsonify({'error': 'Falta api_key'}), 400
+
+    # Buscar la estación por código
     estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
+    
+    # ============================================================
+    # AUTO-REGISTRO: si no existe, crearla automáticamente
+    # ============================================================
     if not estacion:
-        return jsonify({'error': 'Estación no registrada'}), 404
+        try:
+            # Crear estación con los datos recibidos (lat/lon por defecto 0.0)
+            db.execute_query("""
+                INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa)
+                VALUES (%s, %s, %s, NULL, 0.0, 0.0, %s, 1)
+            """, (f"Auto-{codigo}", codigo, data['api_key'], f"Estación registrada automáticamente desde ESP32"))
+            
+            # Obtener la estación recién creada
+            estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
+            print(f"✅ Estación registrada automáticamente: {codigo} con API key {data['api_key']}")
+            
+            # Registrar evento
+            registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'], mensaje=f"Estación auto-registrada {codigo}")
+            
+        except Exception as e:
+            print(f"❌ Error al registrar estación automáticamente: {e}")
+            return jsonify({'error': f'Error al registrar estación: {str(e)}'}), 500
+
+    # Si después del intento sigue sin existir, error
+    if not estacion:
+        return jsonify({'error': 'Estación no registrada y no se pudo auto-registrar'}), 404
+
+    # Verificar API key
     if estacion['api_key'] != data['api_key']:
         return jsonify({'error': 'api_key inválida'}), 401
+
     if not estacion['activa']:
         return jsonify({'error': 'Estación deshabilitada'}), 403
+
     id_estacion = estacion['id_estacion']
     temperatura = data.get('temperatura')
     humedad = data.get('humedad')
@@ -990,13 +1021,17 @@ def api_recibir_datos(codigo):
     if cambio_ao is None and mq2_ao is not None and mq2_base is not None:
         cambio_ao = mq2_ao - mq2_base
         mq2_ok = True
+
     umbrales = obtener_umbrales(id_estacion)
     nivel_humo_num, id_tipo_humo = clasificar_humo(cambio_ao if mq2_ok else None, umbrales)
+
     id_medicion = db.execute_query("""
         INSERT INTO mediciones (id_estacion, temperatura, humedad, dht_ok, mq2_ao, mq2_base, cambio_ao, mq2_do, mq2_ok, id_tipo_humo)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (id_estacion, temperatura, humedad, dht_ok, mq2_ao, mq2_base, cambio_ao, mq2_do, mq2_ok, id_tipo_humo))
+
     registrar_evento('LECTURA_RECIBIDA', id_estacion=id_estacion, mensaje='Medición recibida')
+
     def actualizar_estado_sensor(id_tipo, ok):
         sensor = db.get_one("SELECT * FROM sensores WHERE id_estacion = %s AND id_tipo_sensor = %s", (id_estacion, id_tipo))
         if sensor:
@@ -1005,11 +1040,15 @@ def api_recibir_datos(codigo):
                 db.execute_query("UPDATE sensores SET id_estado_sensor = %s WHERE id_sensor = %s", (nuevo, sensor['id_sensor']))
                 if not ok:
                     registrar_evento('SENSOR_ERROR', id_estacion=id_estacion, mensaje=f"Sensor tipo {id_tipo} en error")
+
     actualizar_estado_sensor(1, dht_ok)
     actualizar_estado_sensor(2, mq2_ok)
+
     hubo_error_sensor = not dht_ok or not mq2_ok
+
     db.execute_query("UPDATE estaciones SET ultima_conexion = NOW(), ip = %s WHERE id_estacion = %s", (request.remote_addr, id_estacion))
     db.execute_query("INSERT INTO historial_conexiones (id_estacion, ip) VALUES (%s, %s)", (id_estacion, request.remote_addr))
+
     if hubo_error_sensor:
         cambiar_estado_estacion(id_estacion, 'ERROR')
         crear_o_actualizar_alerta(
@@ -1026,6 +1065,7 @@ def api_recibir_datos(codigo):
                 WHERE id_estacion = %s AND id_estado_alerta = %s
                 AND id_tipo_alerta = (SELECT id_tipo_alerta FROM tipos_alerta WHERE nombre = 'ESTACION_OFFLINE')
             """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
+
     respuesta_riesgo = 'SIN_EVALUAR'
     if not hubo_error_sensor:
         nivel_riesgo, tipo_alerta, condiciones = evaluar_riesgo(temperatura, humedad, nivel_humo_num, umbrales)
@@ -1059,6 +1099,7 @@ def api_recibir_datos(codigo):
                 AND id_tipo_alerta IN (SELECT id_tipo_alerta FROM tipos_alerta
                     WHERE nombre IN ('RIESGO_MODERADO', 'RIESGO_ALTO', 'POSIBLE_INCENDIO'))
             """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
+
     return jsonify({
         'status': 'ok',
         'medicion_id': id_medicion,

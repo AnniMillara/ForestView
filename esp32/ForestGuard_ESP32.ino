@@ -10,7 +10,7 @@
 // ============ CONFIGURACIÓN ============
 const char* WIFI_SSID     = "GameofThrones";
 const char* WIFI_PASSWORD = "elsenordelosanillos";
-const char* SERVER_HOST   = "26.48.233.11";  // ← CAMBIA ESTO POR TU IP LOCAL (la de ipconfig)
+const char* SERVER_HOST = "192.168.18.116";
 const int   SERVER_PORT   = 5000;
 const char* CODIGO_ESTACION = "A1B2C3D4";
 const char* API_KEY         = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
