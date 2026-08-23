@@ -404,3 +404,8 @@ INSERT INTO sensores (id_estacion, id_tipo_sensor, pin_gpio, canal, descripcion)
 (1, 3, 26, 'ROJO', 'LED RGB rojo'),
 (1, 3, 27, 'VERDE', 'LED RGB verde'),
 (1, 3, 25, 'AZUL', 'LED RGB azul');
+
+-- Agregar estados de estación PENDIENTE y RECHAZADA (ejecutar después de la creación inicial)
+INSERT INTO estados_estacion (nombre, descripcion) VALUES
+('PENDIENTE', 'Esperando aprobación'),
+('RECHAZADA', 'Registro denegado');

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,7 +9,8 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
 
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
@@ -25,328 +27,349 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
 
-<div class="dashboard">
+    <div class="dashboard">
 
-    <!-- ==================== SIDEBAR ==================== -->
-    <aside class="sidebar">
+        <!-- ==================== SIDEBAR ==================== -->
+        <aside class="sidebar">
 
-        <!-- LOGO -->
-        <div class="sidebar-logo">
-            <div class="logo-icon">
-                <img src="{{ url_for('static', filename='img/logo_forestguard.png') }}" alt="ForestGuard">
-            </div>
-            <div>
-                <h2>ForestGuard</h2>
-                <span>MONITORING SYSTEM</span>
-            </div>
-        </div>
-
-        <!-- MENÚ -->
-        <nav class="sidebar-menu">
-            <p class="menu-title">PRINCIPAL</p>
-
-            <a href="{{ url_for('dashboard') }}" class="menu-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
-                <i class="fa-solid fa-chart-pie"></i>
-                <span>Dashboard</span>
-            </a>
-
-            <a href="{{ url_for('zonas') }}" class="menu-item {% if request.endpoint == 'zonas' %}active{% endif %}">
-                <i class="fa-solid fa-location-dot"></i>
-                <span>Zonas</span>
-            </a>
-
-            <a href="{{ url_for('alertas') }}" class="menu-item {% if request.endpoint == 'alertas' %}active{% endif %}">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span>Alertas</span>
-                {% if alertas_activas_count > 0 %}
-                <span class="notification-count">{{ alertas_activas_count }}</span>
-                {% endif %}
-            </a>
-
-            <p class="menu-title">MONITOREO</p>
-
-            <a href="{{ url_for('sensores') }}" class="menu-item {% if request.endpoint == 'sensores' %}active{% endif %}">
-                <i class="fa-solid fa-microchip"></i>
-                <span>Sensores</span>
-            </a>
-
-            <a href="{{ url_for('historial') }}" class="menu-item {% if request.endpoint == 'historial' %}active{% endif %}">
-                <i class="fa-solid fa-chart-line"></i>
-                <span>Historial</span>
-            </a>
-
-            <p class="menu-title">SISTEMA</p>
-
-            {% if session.tipo == 'ADMINISTRADOR' %}
-            <a href="{{ url_for('configuracion') }}" class="menu-item {% if request.endpoint == 'configuracion' %}active{% endif %}">
-                <i class="fa-solid fa-gear"></i>
-                <span>Configuración</span>
-            </a>
-
-            <a href="{{ url_for('usuarios') }}" class="menu-item {% if request.endpoint == 'usuarios' %}active{% endif %}">
-                <i class="fa-solid fa-users"></i>
-                <span>Usuarios</span>
-            </a>
-
-            <a href="{{ url_for('listar_estaciones') }}" class="menu-item {% if request.endpoint == 'listar_estaciones' %}active{% endif %}">
-                <i class="fa-solid fa-tower-broadcast"></i>
-                <span>Estaciones</span>
-            </a>
-            {% endif %}
-
-            <p class="menu-title">VIDEO</p>
-
-            <a href="{{ url_for('media') }}" class="menu-item {% if request.endpoint == 'media' %}active{% endif %}">
-                <i class="fa-solid fa-film"></i>
-                <span>Media</span>
-            </a>
-
-            <a href="{{ url_for('ayuda') }}" class="menu-item {% if request.endpoint == 'ayuda' %}active{% endif %}">
-                <i class="fa-solid fa-circle-question"></i>
-                <span>Ayuda</span>
-            </a>
-        </nav>
-
-        <!-- SIDEBAR BOTTOM -->
-        <div class="sidebar-bottom">
-            <div class="system-status">
-                <span class="status-dot"></span>
+            <!-- LOGO -->
+            <div class="sidebar-logo">
+                <div class="logo-icon">
+                    <img src="{{ url_for('static', filename='img/logo_forestguard.png') }}" alt="ForestGuard">
+                </div>
                 <div>
-                    <strong>Sistema online</strong>
-                    <small id="sidebarStatus">Cargando...</small>
+                    <h2>ForestGuard</h2>
+                    <span>MONITORING SYSTEM</span>
                 </div>
             </div>
 
-            <div class="sidebar-user">
-                <div class="user-avatar">{{ session.usuario[0]|upper if session.usuario else '?' }}</div>
-                <div class="user-info">
-                    <strong>{{ session.usuario if session.usuario else 'Invitado' }}</strong>
-                    <small>{{ session.tipo if session.tipo else 'OBSERVADOR' }}</small>
-                </div>
-                <a href="{{ url_for('logout') }}" title="Cerrar sesión">
-                    <i class="fa-solid fa-right-from-bracket"></i>
+            <!-- MENÚ -->
+            <nav class="sidebar-menu">
+                <p class="menu-title">PRINCIPAL</p>
+
+                <a href="{{ url_for('dashboard') }}"
+                    class="menu-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>Dashboard</span>
                 </a>
-            </div>
-        </div>
 
-    </aside>
+                <a href="{{ url_for('zonas') }}"
+                    class="menu-item {% if request.endpoint == 'zonas' %}active{% endif %}">
+                    <i class="fa-solid fa-location-dot"></i>
+                    <span>Zonas</span>
+                </a>
 
-    <!-- ==================== MAIN CONTENT ==================== -->
-    <main class="main-content">
+                <a href="{{ url_for('alertas') }}"
+                    class="menu-item {% if request.endpoint == 'alertas' %}active{% endif %}">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Alertas</span>
+                    {% if alertas_activas_count > 0 %}
+                    <span class="notification-count">{{ alertas_activas_count }}</span>
+                    {% endif %}
+                </a>
 
-        <!-- TOPBAR -->
-        <header class="topbar">
-            <div class="page-title">
-                <span>{% block category %}MONITOREO{% endblock %}</span>
-                <h1>{% block page_title %}Dashboard{% endblock %}</h1>
-            </div>
+                <p class="menu-title">MONITOREO</p>
 
-            <div class="topbar-actions">
-                <div class="last-update">
-                    <i class="fa-regular fa-clock"></i>
-                    <span>Última actualización:</span>
-                    <strong id="lastUpdate">{{ now.strftime('%H:%M:%S') if now else '--:--' }}</strong>
+                <a href="{{ url_for('sensores') }}"
+                    class="menu-item {% if request.endpoint == 'sensores' %}active{% endif %}">
+                    <i class="fa-solid fa-microchip"></i>
+                    <span>Sensores</span>
+                </a>
+
+                <a href="{{ url_for('historial') }}"
+                    class="menu-item {% if request.endpoint == 'historial' %}active{% endif %}">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Historial</span>
+                </a>
+
+                <p class="menu-title">SISTEMA</p>
+
+                {% if session.tipo == 'ADMINISTRADOR' %}
+                <a href="{{ url_for('configuracion') }}"
+                    class="menu-item {% if request.endpoint == 'configuracion' %}active{% endif %}">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Configuración</span>
+                </a>
+
+                <a href="{{ url_for('usuarios') }}"
+                    class="menu-item {% if request.endpoint == 'usuarios' %}active{% endif %}">
+                    <i class="fa-solid fa-users"></i>
+                    <span>Usuarios</span>
+                </a>
+
+                <a href="{{ url_for('listar_estaciones') }}"
+                    class="menu-item {% if request.endpoint == 'listar_estaciones' %}active{% endif %}">
+                    <i class="fa-solid fa-tower-broadcast"></i>
+                    <span>Estaciones</span>
+                </a>
+
+                <a href="{{ url_for('pendientes') }}"
+                    class="menu-item {% if request.endpoint == 'pendientes' %}active{% endif %}">
+                    <i class="fa-solid fa-clock"></i>
+                    <span>Pendientes</span>
+                    {% if pendientes_count and pendientes_count > 0 %}
+                    <span class="notification-count">{{ pendientes_count }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
+
+                <p class="menu-title">VIDEO</p>
+
+                <a href="{{ url_for('media') }}"
+                    class="menu-item {% if request.endpoint == 'media' %}active{% endif %}">
+                    <i class="fa-solid fa-film"></i>
+                    <span>Media</span>
+                </a>
+
+                <a href="{{ url_for('ayuda') }}"
+                    class="menu-item {% if request.endpoint == 'ayuda' %}active{% endif %}">
+                    <i class="fa-solid fa-circle-question"></i>
+                    <span>Ayuda</span>
+                </a>
+            </nav>
+
+            <!-- SIDEBAR BOTTOM -->
+            <div class="sidebar-bottom">
+                <div class="system-status">
+                    <span class="status-dot"></span>
+                    <div>
+                        <strong>Sistema online</strong>
+                        <small id="sidebarStatus">Cargando...</small>
+                    </div>
                 </div>
 
-                <button class="icon-button" title="Notificaciones">
-                    <i class="fa-regular fa-bell"></i>
-                    {% if alertas_activas_count > 0 %}
-                    <span class="alert-dot"></span>
-                    {% endif %}
-                </button>
-
-                <div class="profile">
-                    <div class="profile-avatar">{{ session.usuario[0]|upper if session.usuario else '?' }}</div>
-                    <div>
+                <div class="sidebar-user">
+                    <div class="user-avatar">{{ session.usuario[0]|upper if session.usuario else '?' }}</div>
+                    <div class="user-info">
                         <strong>{{ session.usuario if session.usuario else 'Invitado' }}</strong>
                         <small>{{ session.tipo if session.tipo else 'OBSERVADOR' }}</small>
                     </div>
+                    <a href="{{ url_for('logout') }}" title="Cerrar sesión">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </a>
                 </div>
             </div>
-        </header>
 
-        <!-- CONTENT -->
-        <section class="content">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-            <div class="flashes">
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">
-                    <i class="fa-solid fa-circle-info"></i> {{ message }}
+        </aside>
+
+        <!-- ==================== MAIN CONTENT ==================== -->
+        <main class="main-content">
+
+            <!-- TOPBAR -->
+            <header class="topbar">
+                <div class="page-title">
+                    <span>{% block category %}MONITOREO{% endblock %}</span>
+                    <h1>{% block page_title %}Dashboard{% endblock %}</h1>
                 </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-            {% endwith %}
 
-            {% block content %}{% endblock %}
-        </section>
+                <div class="topbar-actions">
+                    <div class="last-update">
+                        <i class="fa-regular fa-clock"></i>
+                        <span>Última actualización:</span>
+                        <strong id="lastUpdate">{{ now.strftime('%H:%M:%S') if now else '--:--' }}</strong>
+                    </div>
 
-    </main>
+                    <button class="icon-button" title="Notificaciones">
+                        <i class="fa-regular fa-bell"></i>
+                        {% if alertas_activas_count > 0 %}
+                        <span class="alert-dot"></span>
+                        {% endif %}
+                    </button>
 
-</div>
+                    <div class="profile">
+                        <div class="profile-avatar">{{ session.usuario[0]|upper if session.usuario else '?' }}</div>
+                        <div>
+                            <strong>{{ session.usuario if session.usuario else 'Invitado' }}</strong>
+                            <small>{{ session.tipo if session.tipo else 'OBSERVADOR' }}</small>
+                        </div>
+                    </div>
+                </div>
+            </header>
 
-<!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+            <!-- CONTENT -->
+            <section class="content">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="flashes">
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        <i class="fa-solid fa-circle-info"></i> {{ message }}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endwith %}
 
-<!-- ForestGuard JS (dashboard) -->
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+                {% block content %}{% endblock %}
+            </section>
 
-<!-- ========================================================= -->
-<!--            SCRIPT DE NOTIFICACIONES (global)              -->
-<!-- ========================================================= -->
-<script>
-    (function() {
-        // Variables de control
-        let notificadas = new Set();
-        let permisosPedidos = false;
+        </main>
 
-        // Configuración
-        const INTERVALO = 15000; // 15 segundos
+    </div>
 
-        // ========== SOLICITAR PERMISO PARA NOTIFICACIONES ==========
-        function pedirPermisoNotificaciones() {
-            if (!('Notification' in window)) return;
-            if (Notification.permission === 'default') {
-                Notification.requestPermission();
-            }
-            permisosPedidos = true;
-        }
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-        // ========== OBTENER UBICACIÓN Y ENVIAR AL SERVIDOR ==========
-        function enviarUbicacion() {
-            if (!navigator.geolocation) return;
-            navigator.geolocation.getCurrentPosition(
-                function(pos) {
-                    fetch('/api/set_location', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            lat: pos.coords.latitude,
-                            lon: pos.coords.longitude
-                        })
-                    }).catch(e => console.warn('Error al enviar ubicación', e));
-                },
-                function(err) {
-                    // Usuario denegó o error: no hacer nada
-                    console.warn('Geolocalización no disponible', err.message);
-                },
-                { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
-            );
-        }
+    <!-- ForestGuard JS (dashboard) -->
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 
-        // ========== REPRODUCIR SONIDO DE ALARMA (Web Audio) ==========
-        function reproducirAlarma() {
-            try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'square';
-                osc.frequency.value = 800;
-                gain.gain.value = 0.3;
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start();
-                setTimeout(() => {
-                    osc.stop();
-                    ctx.close();
-                }, 500);
-            } catch (e) {
-                // Silenciosamente ignorar si no soporta Web Audio
-            }
-        }
+    <!-- ========================================================= -->
+    <!--            SCRIPT DE NOTIFICACIONES (global)              -->
+    <!-- ========================================================= -->
+    <script>
+        (function () {
+            // Variables de control
+            let notificadas = new Set();
+            let permisosPedidos = false;
 
-        // ========== VIBRAR ==========
-        function vibrarDispositivo() {
-            if (navigator.vibrate) {
-                navigator.vibrate([200, 100, 200, 100, 500]);
-            }
-        }
+            // Configuración
+            const INTERVALO = 15000; // 15 segundos
 
-        // ========== MOSTRAR NOTIFICACIÓN DEL NAVEGADOR ==========
-        function mostrarNotificacion(titulo, cuerpo, idAlerta) {
-            if (!('Notification' in window) || Notification.permission !== 'granted') {
-                console.log(`[ALERTA] ${titulo}: ${cuerpo}`);
-                return;
-            }
-            const notif = new Notification(titulo, {
-                body: cuerpo,
-                icon: '/static/img/logo_forestguard.png',
-                tag: `alerta-${idAlerta}`,
-                requireInteraction: true
-            });
-            notif.onclick = function() {
-                window.focus();
-                window.location.href = '/alertas';
-                this.close();
-            };
-            setTimeout(() => notif.close(), 10000);
-        }
-
-        // ========== PROCESAR ALERTAS ACTIVAS ==========
-        function procesarAlertas(alertas) {
-            alertas.forEach(alerta => {
-                const id = alerta.id_alerta;
-                if (notificadas.has(id)) return;
-
-                const esCritica = (alerta.nivel === 'ALERTA');
-                const cerca = alerta.cerca === true;
-
-                const activarAlarma = esCritica && cerca;
-
-                let mensaje = `${alerta.estacion}: ${alerta.descripcion}`;
-                if (alerta.distancia_km !== null) {
-                    mensaje += ` (${alerta.distancia_km} km)`;
+            // ========== SOLICITAR PERMISO PARA NOTIFICACIONES ==========
+            function pedirPermisoNotificaciones() {
+                if (!('Notification' in window)) return;
+                if (Notification.permission === 'default') {
+                    Notification.requestPermission();
                 }
-                if (activarAlarma) {
-                    mensaje += ' 🚨 ¡ALERTA CRÍTICA CERCA!';
-                }
+                permisosPedidos = true;
+            }
 
-                mostrarNotificacion(
-                    `ForestGuard - ${alerta.nivel}`,
-                    mensaje,
-                    id
+            // ========== OBTENER UBICACIÓN Y ENVIAR AL SERVIDOR ==========
+            function enviarUbicacion() {
+                if (!navigator.geolocation) return;
+                navigator.geolocation.getCurrentPosition(
+                    function (pos) {
+                        fetch('/api/set_location', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                lat: pos.coords.latitude,
+                                lon: pos.coords.longitude
+                            })
+                        }).catch(e => console.warn('Error al enviar ubicación', e));
+                    },
+                    function (err) {
+                        // Usuario denegó o error: no hacer nada
+                        console.warn('Geolocalización no disponible', err.message);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
                 );
+            }
 
-                if (activarAlarma) {
-                    vibrarDispositivo();
-                    reproducirAlarma();
+            // ========== REPRODUCIR SONIDO DE ALARMA (Web Audio) ==========
+            function reproducirAlarma() {
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.value = 800;
+                    gain.gain.value = 0.3;
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    setTimeout(() => {
+                        osc.stop();
+                        ctx.close();
+                    }, 500);
+                } catch (e) {
+                    // Silenciosamente ignorar si no soporta Web Audio
                 }
+            }
 
-                notificadas.add(id);
-            });
-        }
+            // ========== VIBRAR ==========
+            function vibrarDispositivo() {
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200, 100, 500]);
+                }
+            }
 
-        // ========== CONSULTAR ALERTAS ACTIVAS ==========
-        function fetchAlertas() {
-            fetch('/api/alertas_activas')
-                .then(res => res.json())
-                .then(data => {
-                    procesarAlertas(data);
-                })
-                .catch(err => console.warn('Error al obtener alertas', err));
-        }
+            // ========== MOSTRAR NOTIFICACIÓN DEL NAVEGADOR ==========
+            function mostrarNotificacion(titulo, cuerpo, idAlerta) {
+                if (!('Notification' in window) || Notification.permission !== 'granted') {
+                    console.log(`[ALERTA] ${titulo}: ${cuerpo}`);
+                    return;
+                }
+                const notif = new Notification(titulo, {
+                    body: cuerpo,
+                    icon: '/static/img/logo_forestguard.png',
+                    tag: `alerta-${idAlerta}`,
+                    requireInteraction: true
+                });
+                notif.onclick = function () {
+                    window.focus();
+                    window.location.href = '/alertas';
+                    this.close();
+                };
+                setTimeout(() => notif.close(), 10000);
+            }
 
-        // ========== INICIO ==========
-        function init() {
-            pedirPermisoNotificaciones();
-            enviarUbicacion();
-            fetchAlertas();
-            setInterval(fetchAlertas, INTERVALO);
-        }
+            // ========== PROCESAR ALERTAS ACTIVAS ==========
+            function procesarAlertas(alertas) {
+                alertas.forEach(alerta => {
+                    const id = alerta.id_alerta;
+                    if (notificadas.has(id)) return;
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
-        }
-    })();
-</script>
+                    const esCritica = (alerta.nivel === 'ALERTA');
+                    const cerca = alerta.cerca === true;
 
-<!-- Bloque para scripts adicionales (sin duplicar el bloque extra_scripts) -->
-{% block extra_scripts %}{% endblock %}
+                    const activarAlarma = esCritica && cerca;
+
+                    let mensaje = `${alerta.estacion}: ${alerta.descripcion}`;
+                    if (alerta.distancia_km !== null) {
+                        mensaje += ` (${alerta.distancia_km} km)`;
+                    }
+                    if (activarAlarma) {
+                        mensaje += ' 🚨 ¡ALERTA CRÍTICA CERCA!';
+                    }
+
+                    mostrarNotificacion(
+                        `ForestGuard - ${alerta.nivel}`,
+                        mensaje,
+                        id
+                    );
+
+                    if (activarAlarma) {
+                        vibrarDispositivo();
+                        reproducirAlarma();
+                    }
+
+                    notificadas.add(id);
+                });
+            }
+
+            // ========== CONSULTAR ALERTAS ACTIVAS ==========
+            function fetchAlertas() {
+                fetch('/api/alertas_activas')
+                    .then(res => res.json())
+                    .then(data => {
+                        procesarAlertas(data);
+                    })
+                    .catch(err => console.warn('Error al obtener alertas', err));
+            }
+
+            // ========== INICIO ==========
+            function init() {
+                pedirPermisoNotificaciones();
+                enviarUbicacion();
+                fetchAlertas();
+                setInterval(fetchAlertas, INTERVALO);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>
+
+    <!-- Bloque para scripts adicionales (sin duplicar el bloque extra_scripts) -->
+    {% block extra_scripts %}{% endblock %}
 
 </body>
+
 </html>

@@ -21,7 +21,7 @@ Session(app)
 # =====================================================================
 # CONSTANTES
 # =====================================================================
-ESTADO_ESTACION = {'ONLINE': 1, 'OFFLINE': 2, 'ERROR': 3, 'SIN_DATOS': 4}
+ESTADO_ESTACION = {'ONLINE': 1, 'OFFLINE': 2, 'ERROR': 3, 'SIN_DATOS': 4, 'PENDIENTE': 5, 'RECHAZADA': 6}
 ESTADO_SENSOR = {'ACTIVO': 1, 'ERROR': 2, 'SIN_DATOS': 3}
 ESTADO_ALERTA = {'ACTIVA': 1, 'ATENDIDA': 2, 'RESUELTA': 3, 'FALSA': 4}
 ROLES_GESTION_ALERTAS = ('ADMINISTRADOR', 'BOMBERO', 'OPERADOR')
@@ -67,7 +67,7 @@ def inject_alertas_count():
 # INICIALIZACIÓN
 # =====================================================================
 def init_db():
-    """Crea usuario admin, usuarios de prueba y ajusta tabla estaciones."""
+    """Crea usuario admin, usuarios de prueba y ajusta tablas."""
     # Admin
     admin = db.get_one("SELECT id_usuario FROM usuarios WHERE nombre_usuario = %s", ('admin',))
     if not admin:
@@ -93,7 +93,7 @@ def init_db():
             """, (user, hash_pass, email, nombre, tipo))
             print(f"Usuario {user} creado ({user} / {pwd})")
 
-    # Asegurar que latitud y longitud acepten NULL (para auto-registro)
+    # Asegurar que latitud y longitud acepten NULL
     try:
         db.execute_query("ALTER TABLE estaciones MODIFY latitud DECIMAL(10,8) NULL")
         db.execute_query("ALTER TABLE estaciones MODIFY longitud DECIMAL(11,8) NULL")
@@ -104,6 +104,12 @@ def init_db():
     # Verificar que exista la configuración de radio_alerta
     if not db.get_one("SELECT clave FROM configuracion WHERE clave = 'radio_alerta'"):
         db.execute_query("INSERT INTO configuracion (clave, valor, descripcion) VALUES ('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria')")
+
+    # Agregar estados de estación pendiente y rechazada si no existen
+    for nombre, desc in [('PENDIENTE', 'Esperando aprobación'), ('RECHAZADA', 'Registro denegado')]:
+        if not db.get_one("SELECT id_estado_estacion FROM estados_estacion WHERE nombre = %s", (nombre,)):
+            db.execute_query("INSERT INTO estados_estacion (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
+            print(f"✅ Estado '{nombre}' agregado.")
 
 # =====================================================================
 # HELPERS DE NEGOCIO
@@ -254,6 +260,13 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1-a))
     return R * c
 
+def mapear_nivel_humo_a_id(nivel):
+    """Convierte nivel 0-3 a id_tipo_humo según la tabla tipos_humo."""
+    if nivel is None:
+        return None
+    fila = db.get_one("SELECT id_tipo_humo FROM tipos_humo WHERE nivel = %s", (nivel,))
+    return fila['id_tipo_humo'] if fila else None
+
 # =====================================================================
 # RUTAS PÚBLICAS
 # =====================================================================
@@ -396,7 +409,7 @@ def zonas():
     )
 
 # =====================================================================
-# GESTIÓN DE ESTACIONES (CRUD)
+# GESTIÓN DE ESTACIONES (CRUD) + PENDIENTES
 # =====================================================================
 @app.route('/estaciones')
 @login_required
@@ -410,13 +423,94 @@ def listar_estaciones():
         WHERE e.activa = 1
         ORDER BY e.nombre
     """)
+    pendientes_count = db.get_one("SELECT COUNT(*) as count FROM estaciones WHERE id_estado_estacion = %s AND activa = 0", (ESTADO_ESTACION['PENDIENTE'],))
     return render_template('estaciones.html',
         page="estaciones",
         title="Estaciones",
         category="ADMINISTRACIÓN",
         estaciones=estaciones,
+        pendientes_count=pendientes_count['count'] if pendientes_count else 0,
         now=datetime.datetime.now()
     )
+
+@app.route('/estaciones/pendientes')
+@login_required
+@admin_required
+def pendientes():
+    pendientes = db.get_all("""
+        SELECT e.*, z.nombre as zona
+        FROM estaciones e
+        LEFT JOIN zonas z ON e.id_zona = z.id_zona
+        WHERE e.id_estado_estacion = %s AND e.activa = 0
+        ORDER BY e.fecha_registro DESC
+    """, (ESTADO_ESTACION['PENDIENTE'],))
+    return render_template('pendientes.html',
+        page="estaciones",
+        title="Estaciones pendientes",
+        category="ADMINISTRACIÓN",
+        pendientes=pendientes,
+        now=datetime.datetime.now()
+    )
+
+@app.route('/estaciones/<int:id_estacion>/aprobar', methods=['POST'])
+@login_required
+@admin_required
+def aprobar_estacion(id_estacion):
+    est = db.get_one("SELECT * FROM estaciones WHERE id_estacion = %s", (id_estacion,))
+    if not est:
+        flash('Estación no encontrada', 'danger')
+        return redirect(url_for('pendientes'))
+    # Cambiar a ONLINE y activa=1
+    nueva_api_key = secrets.token_hex(16)
+    db.execute_query("""
+        UPDATE estaciones SET activa = 1, id_estado_estacion = %s, api_key = %s
+        WHERE id_estacion = %s
+    """, (ESTADO_ESTACION['ONLINE'], nueva_api_key, id_estacion))
+    registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} aprobada")
+    flash('Estación aprobada correctamente', 'success')
+    return redirect(url_for('pendientes'))
+
+@app.route('/estaciones/<int:id_estacion>/rechazar', methods=['POST'])
+@login_required
+@admin_required
+def rechazar_estacion(id_estacion):
+    est = db.get_one("SELECT nombre FROM estaciones WHERE id_estacion = %s", (id_estacion,))
+    if est:
+        db.execute_query("UPDATE estaciones SET id_estado_estacion = %s, activa = 0 WHERE id_estacion = %s",
+                         (ESTADO_ESTACION['RECHAZADA'], id_estacion))
+        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} rechazada")
+        flash('Estación rechazada', 'warning')
+    else:
+        flash('Estación no encontrada', 'danger')
+    return redirect(url_for('pendientes'))
+
+@app.route('/estaciones/<int:id_estacion>/desconectar', methods=['POST'])
+@login_required
+@admin_required
+def desconectar_estacion(id_estacion):
+    est = db.get_one("SELECT nombre FROM estaciones WHERE id_estacion = %s", (id_estacion,))
+    if est:
+        db.execute_query("UPDATE estaciones SET activa = 0, id_estado_estacion = %s WHERE id_estacion = %s",
+                         (ESTADO_ESTACION['OFFLINE'], id_estacion))
+        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} desconectada")
+        flash('Estación desconectada', 'info')
+    else:
+        flash('Estación no encontrada', 'danger')
+    return redirect(url_for('listar_estaciones'))
+
+@app.route('/estaciones/<int:id_estacion>/reactivar', methods=['POST'])
+@login_required
+@admin_required
+def reactivar_estacion(id_estacion):
+    est = db.get_one("SELECT nombre FROM estaciones WHERE id_estacion = %s", (id_estacion,))
+    if est:
+        db.execute_query("UPDATE estaciones SET activa = 1, id_estado_estacion = %s WHERE id_estacion = %s",
+                         (ESTADO_ESTACION['ONLINE'], id_estacion))
+        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} reactivada")
+        flash('Estación reactivada', 'success')
+    else:
+        flash('Estación no encontrada', 'danger')
+    return redirect(url_for('listar_estaciones'))
 
 @app.route('/estaciones/nueva', methods=['GET', 'POST'])
 @login_required
@@ -440,15 +534,14 @@ def nueva_estacion():
                 return redirect(url_for('nueva_estacion'))
         api_key = secrets.token_hex(16)
         try:
-            # Asegurar latitud y longitud no vacíos
             if not latitud:
                 latitud = 0.0
             if not longitud:
                 longitud = 0.0
             db.execute_query("""
-                INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (nombre, codigo, api_key, id_zona or None, latitud, longitud, descripcion))
+                INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s)
+            """, (nombre, codigo, api_key, id_zona or None, latitud, longitud, descripcion, ESTADO_ESTACION['ONLINE']))
             flash(f'✅ Estación "{nombre}" creada exitosamente.\nCódigo: {codigo}\nAPI Key: {api_key}', 'success')
             registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {nombre} creada con código {codigo}")
             return redirect(url_for('listar_estaciones'))
@@ -963,7 +1056,7 @@ def admin():
     )
 
 # =====================================================================
-# API - INGESTA DE DATOS DE LA ESP32 (CON AUTO-REGISTRO)
+# API - INGESTA DE DATOS DE LA ESP32 (CON AUTO-REGISTRO Y ESTADO PENDIENTE)
 # =====================================================================
 @app.route('/api/estaciones/<codigo>/datos', methods=['POST'])
 def api_recibir_datos(codigo):
@@ -975,25 +1068,25 @@ def api_recibir_datos(codigo):
 
     # Buscar la estación por código
     estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
-    
+
     # ============================================================
-    # AUTO-REGISTRO: si no existe, crearla automáticamente
+    # AUTO-REGISTRO: si no existe, crearla en estado PENDIENTE
     # ============================================================
     if not estacion:
         try:
-            # Crear estación con los datos recibidos (lat/lon por defecto 0.0)
+            # Crear estación con estado PENDIENTE y activa=0
             db.execute_query("""
-                INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa)
-                VALUES (%s, %s, %s, NULL, 0.0, 0.0, %s, 1)
-            """, (f"Auto-{codigo}", codigo, data['api_key'], f"Estación registrada automáticamente desde ESP32"))
-            
+                INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
+                VALUES (%s, %s, %s, NULL, 0.0, 0.0, %s, 0, %s)
+            """, (f"Auto-{codigo}", codigo, data['api_key'], "Estación registrada automáticamente - pendiente de aprobación", ESTADO_ESTACION['PENDIENTE']))
+
             # Obtener la estación recién creada
             estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
-            print(f"✅ Estación registrada automáticamente: {codigo} con API key {data['api_key']}")
-            
+            print(f"✅ Estación registrada automáticamente (pendiente): {codigo} con API key {data['api_key']}")
+
             # Registrar evento
-            registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'], mensaje=f"Estación auto-registrada {codigo}")
-            
+            registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'], mensaje=f"Estación auto-registrada {codigo} (pendiente)")
+
         except Exception as e:
             print(f"❌ Error al registrar estación automáticamente: {e}")
             return jsonify({'error': f'Error al registrar estación: {str(e)}'}), 500
@@ -1002,12 +1095,13 @@ def api_recibir_datos(codigo):
     if not estacion:
         return jsonify({'error': 'Estación no registrada y no se pudo auto-registrar'}), 404
 
-    # Verificar API key
+    # Verificar API key (la que envía la ESP32 debe coincidir con la almacenada)
     if estacion['api_key'] != data['api_key']:
         return jsonify({'error': 'api_key inválida'}), 401
 
+    # Verificar que la estación esté activa (aprobada)
     if not estacion['activa']:
-        return jsonify({'error': 'Estación deshabilitada'}), 403
+        return jsonify({'error': 'Estación pendiente de aprobación. Contacte al administrador.'}), 403
 
     id_estacion = estacion['id_estacion']
     temperatura = data.get('temperatura')
@@ -1022,8 +1116,16 @@ def api_recibir_datos(codigo):
         cambio_ao = mq2_ao - mq2_base
         mq2_ok = True
 
+    # Obtener umbrales para evaluación (solo si se requiere)
     umbrales = obtener_umbrales(id_estacion)
-    nivel_humo_num, id_tipo_humo = clasificar_humo(cambio_ao if mq2_ok else None, umbrales)
+
+    # Determinar id_tipo_humo usando el nivel enviado por la ESP32 si existe
+    nivel_humo_enviado = data.get('nivel_humo')
+    if nivel_humo_enviado is not None:
+        id_tipo_humo = mapear_nivel_humo_a_id(nivel_humo_enviado)
+    else:
+        # Fallback: recalcular con los umbrales de Flask
+        nivel_humo_num, id_tipo_humo = clasificar_humo(cambio_ao if mq2_ok else None, umbrales)
 
     id_medicion = db.execute_query("""
         INSERT INTO mediciones (id_estacion, temperatura, humedad, dht_ok, mq2_ao, mq2_base, cambio_ao, mq2_do, mq2_ok, id_tipo_humo)
@@ -1068,6 +1170,9 @@ def api_recibir_datos(codigo):
 
     respuesta_riesgo = 'SIN_EVALUAR'
     if not hubo_error_sensor:
+        # Usamos el nivel_humo que ya tenemos (id_tipo_humo) para evaluar riesgo
+        nivel_humo_num = db.get_one("SELECT nivel FROM tipos_humo WHERE id_tipo_humo = %s", (id_tipo_humo,))
+        nivel_humo_num = nivel_humo_num['nivel'] if nivel_humo_num else 0
         nivel_riesgo, tipo_alerta, condiciones = evaluar_riesgo(temperatura, humedad, nivel_humo_num, umbrales)
         respuesta_riesgo = nivel_riesgo
         nivel_id = db.get_one("SELECT id_nivel_riesgo FROM niveles_riesgo WHERE nombre = %s", (nivel_riesgo,))

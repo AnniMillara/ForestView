@@ -1,14 +1,13 @@
-#include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
+#include <EEPROM.h>
 
 // ============================================================
 //                     FORESTGUARD
 //              SISTEMA DE MONITOREO
 // ============================================================
-//
 // DHT22 -> Temperatura + Humedad
 // MQ-2  -> Detección de humo/gases
 // RGB   -> Estado del sistema
@@ -20,19 +19,15 @@
 // 🔵 AZUL     = ERROR DHT22
 //
 // ESP32 -> WiFi -> Flask -> MySQL
-//
 // ============================================================
 
 // ============================================================
 //                         PINES
 // ============================================================
-
 #define DHT_PIN 13
 #define DHT_TYPE DHT22
-
 #define MQ2_AO 35
 #define MQ2_DO 33
-
 #define LED_ROJO  26
 #define LED_VERDE 27
 #define LED_AZUL  25
@@ -40,53 +35,40 @@
 // ============================================================
 //                    CONFIGURACIÓN WIFI
 // ============================================================
-
 const char* WIFI_SSID = "GameofThrones";
 const char* WIFI_PASSWORD = "elsenordelosanillos";
 
 // ============================================================
 //                  CONFIGURACIÓN FLASK
 // ============================================================
-
-// --- IMPORTANTE: Cambia esta IP por la IP local de tu PC ---
-// Para obtenerla: abre cmd y escribe "ipconfig" (busca IPv4).
-// Si quieres que nunca cambie, reserva esa IP en el router.
-const char* SERVER_HOST = "192.168.18.116";  // ej. "192.168.18.116"
-// ------------------------------------------------------------
-
+const char* SERVER_HOST = "192.168.18.116";   // IP de tu PC
 const int SERVER_PORT = 5000;
 
 // ============================================================
-//                  IDENTIFICACIÓN ESTACIÓN
+//                  IDENTIFICACIÓN ESTACIÓN (MAC)
 // ============================================================
+String stationCode = "";
+String apiKey = "";  // Se leerá de EEPROM o se usará la fija
 
-const char* CODIGO_ESTACION = "A1B2C3D4";
-const char* API_KEY = "371bd7a36edaf49c30983a84c75f678e";  // Debe coincidir con la BD
+// Clave por defecto (solo para primer registro)
+const char* DEFAULT_API_KEY = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
 
 // ============================================================
 //                  URL DEL SERVIDOR
 // ============================================================
-
 String serverUrl() {
-  return String("http://") +
-         SERVER_HOST +
-         ":" +
-         SERVER_PORT +
-         "/api/estaciones/" +
-         CODIGO_ESTACION +
-         "/datos";
+  return String("http://") + SERVER_HOST + ":" + SERVER_PORT +
+         "/api/estaciones/" + stationCode + "/datos";
 }
 
 // ============================================================
 //                         DHT22
 // ============================================================
-
 DHT dht(DHT_PIN, DHT_TYPE);
 
 // ============================================================
 //                  CONFIGURACIÓN PWM
 // ============================================================
-
 const int FRECUENCIA = 5000;
 const int RESOLUCION = 8;
 
@@ -98,7 +80,6 @@ const int CANAL_AZUL  = 2;
 // ============================================================
 //              UMBRALES DE TEMPERATURA
 // ============================================================
-
 const float TEMP_RIESGO  = 30.0;
 const float TEMP_ALTA    = 35.0;
 const float TEMP_CRITICA = 40.0;
@@ -106,7 +87,6 @@ const float TEMP_CRITICA = 40.0;
 // ============================================================
 //                 UMBRALES DE HUMEDAD
 // ============================================================
-
 const float HUMEDAD_RIESGO  = 45.0;
 const float HUMEDAD_BAJA    = 30.0;
 const float HUMEDAD_CRITICA = 15.0;
@@ -114,7 +94,6 @@ const float HUMEDAD_CRITICA = 15.0;
 // ============================================================
 //                 NIVELES DE HUMO
 // ============================================================
-
 const int HUMO_BAJO  = 100;
 const int HUMO_MEDIO = 300;
 const int HUMO_ALTO  = 500;
@@ -122,13 +101,11 @@ const int HUMO_ALTO  = 500;
 // ============================================================
 //                  MQ-2 DIGITAL
 // ============================================================
-
 int estadoDONormal = HIGH;
 
 // ============================================================
 //                       TIEMPOS
 // ============================================================
-
 const unsigned long INTERVALO_LECTURA = 2000;
 const unsigned long INTERVALO_ENVIO = 5000;
 const unsigned long TIEMPO_CALIBRACION = 10000;
@@ -139,13 +116,11 @@ unsigned long ultimoEnvio = 0;
 // ============================================================
 //                VARIABLES DE CALIBRACIÓN
 // ============================================================
-
 int aoBase = 0;
 
 // ============================================================
 //                    FUNCIONES LED
 // ============================================================
-
 void ledApagado() {
   ledcWrite(CANAL_ROJO, 0);
   ledcWrite(CANAL_VERDE, 0);
@@ -171,7 +146,6 @@ void ledAzul() {
 }
 
 void ledAmarillo() {
-  // AMARILLO CALIBRADO PARA TU LED
   ledcWrite(CANAL_ROJO, 255);
   ledcWrite(CANAL_VERDE, 70);
   ledcWrite(CANAL_AZUL, 0);
@@ -186,7 +160,6 @@ void ledNaranjo() {
 // ============================================================
 //                 SECUENCIA DE ENCENDIDO
 // ============================================================
-
 void secuenciaInicio() {
   Serial.println();
   Serial.println("======================================");
@@ -194,16 +167,11 @@ void secuenciaInicio() {
   Serial.println("       INICIANDO SISTEMA");
   Serial.println("======================================");
 
-  ledRojo();
-  delay(300);
-  ledVerde();
-  delay(300);
-  ledAzul();
-  delay(300);
-  ledAmarillo();
-  delay(300);
-  ledNaranjo();
-  delay(300);
+  ledRojo(); delay(300);
+  ledVerde(); delay(300);
+  ledAzul(); delay(300);
+  ledAmarillo(); delay(300);
+  ledNaranjo(); delay(300);
   ledApagado();
 
   Serial.println("LED RGB -> OK");
@@ -212,76 +180,53 @@ void secuenciaInicio() {
 // ============================================================
 //                    PRUEBA LED
 // ============================================================
-
 void pruebaLED() {
   Serial.println();
   Serial.println("------ PRUEBA LED RGB ------");
-  ledRojo();
-  Serial.println("ROJO");
-  delay(800);
-  ledVerde();
-  Serial.println("VERDE");
-  delay(800);
-  ledAzul();
-  Serial.println("AZUL");
-  delay(800);
-  ledAmarillo();
-  Serial.println("AMARILLO");
-  delay(800);
-  ledNaranjo();
-  Serial.println("NARANJO");
-  delay(800);
-  ledApagado();
-  Serial.println("APAGADO");
-  delay(500);
+  ledRojo(); Serial.println("ROJO"); delay(800);
+  ledVerde(); Serial.println("VERDE"); delay(800);
+  ledAzul(); Serial.println("AZUL"); delay(800);
+  ledAmarillo(); Serial.println("AMARILLO"); delay(800);
+  ledNaranjo(); Serial.println("NARANJO"); delay(800);
+  ledApagado(); Serial.println("APAGADO"); delay(500);
   Serial.println("LED RGB -> OK");
 }
 
 // ============================================================
 //                    PRUEBA DHT22
 // ============================================================
-
 bool pruebaDHT22() {
   Serial.println();
   Serial.println("------ PRUEBA DHT22 ------");
   delay(2000);
   float temperatura = dht.readTemperature();
   float humedad = dht.readHumidity();
-
   if (isnan(temperatura) || isnan(humedad)) {
     Serial.println("DHT22 -> ERROR");
     return false;
   }
   Serial.println("DHT22 -> OK");
-  Serial.print("Temperatura: ");
-  Serial.print(temperatura, 1);
-  Serial.println(" C");
-  Serial.print("Humedad: ");
-  Serial.print(humedad, 1);
-  Serial.println(" %");
+  Serial.print("Temperatura: "); Serial.print(temperatura, 1); Serial.println(" C");
+  Serial.print("Humedad: "); Serial.print(humedad, 1); Serial.println(" %");
   return true;
 }
 
 // ============================================================
 //                    PRUEBA MQ-2
 // ============================================================
-
 void pruebaMQ2() {
   Serial.println();
   Serial.println("------ PRUEBA MQ-2 ------");
   int ao = analogRead(MQ2_AO);
   int estadoDO = digitalRead(MQ2_DO);
-  Serial.print("AO = ");
-  Serial.println(ao);
-  Serial.print("DO = ");
-  Serial.println(estadoDO);
+  Serial.print("AO = "); Serial.println(ao);
+  Serial.print("DO = "); Serial.println(estadoDO);
   Serial.println("MQ-2 -> SEÑAL RECIBIDA");
 }
 
 // ============================================================
 //                 CALIBRACIÓN MQ-2
 // ============================================================
-
 void calibrarMQ2() {
   Serial.println();
   Serial.println("======================================");
@@ -297,29 +242,24 @@ void calibrarMQ2() {
   unsigned long inicio = millis();
   long sumaAO = 0;
   int cantidad = 0;
-  int high = 0;
-  int low = 0;
+  int high = 0, low = 0;
 
   while (millis() - inicio < TIEMPO_CALIBRACION) {
     int ao = analogRead(MQ2_AO);
     int estadoDO = digitalRead(MQ2_DO);
     sumaAO += ao;
     cantidad++;
-    if (estadoDO == HIGH) high++;
-    else low++;
+    if (estadoDO == HIGH) high++; else low++;
     delay(250);
   }
 
   if (cantidad > 0) aoBase = sumaAO / cantidad;
-  if (high >= low) estadoDONormal = HIGH;
-  else estadoDONormal = LOW;
+  estadoDONormal = (high >= low) ? HIGH : LOW;
 
   Serial.println();
   Serial.println("--------------------------------------");
-  Serial.print("AO BASE     = ");
-  Serial.println(aoBase);
-  Serial.print("DO NORMAL   = ");
-  Serial.println(estadoDONormal);
+  Serial.print("AO BASE     = "); Serial.println(aoBase);
+  Serial.print("DO NORMAL   = "); Serial.println(estadoDONormal);
   Serial.println("--------------------------------------");
   Serial.println("CALIBRACION TERMINADA");
   ledVerde();
@@ -328,7 +268,6 @@ void calibrarMQ2() {
 // ============================================================
 //                  CLASIFICAR HUMO
 // ============================================================
-
 int obtenerNivelHumo(int cambioAO, bool humoDO) {
   if (cambioAO >= HUMO_ALTO) return 3;
   if (cambioAO >= HUMO_MEDIO) return 2;
@@ -340,7 +279,6 @@ int obtenerNivelHumo(int cambioAO, bool humoDO) {
 // ============================================================
 //              MOSTRAR NIVEL DE HUMO
 // ============================================================
-
 void imprimirNivelHumo(int nivelHumo) {
   Serial.print("NIVEL HUMO  : ");
   if (nivelHumo == 0) Serial.println("NINGUNO");
@@ -352,7 +290,6 @@ void imprimirNivelHumo(int nivelHumo) {
 // ============================================================
 //              MOSTRAR CONDICIONES
 // ============================================================
-
 void mostrarCondiciones(float temp, float hum, int nivelHumo, bool humoDO) {
   Serial.println();
   Serial.println("-------- CONDICIONES --------");
@@ -375,7 +312,6 @@ void mostrarCondiciones(float temp, float hum, int nivelHumo, bool humoDO) {
 // ============================================================
 //                  EVALUAR FORESTGUARD
 // ============================================================
-
 void evaluarForestGuard(float temp, float hum, int nivelHumo, int cambioAO, bool humoDO) {
   bool tempRiesgo = temp >= TEMP_RIESGO;
   bool tempAlta = temp >= TEMP_ALTA;
@@ -450,7 +386,6 @@ void evaluarForestGuard(float temp, float hum, int nivelHumo, int cambioAO, bool
 // ============================================================
 //                       WIFI
 // ============================================================
-
 void conectarWiFi() {
   Serial.println();
   Serial.println("======================================");
@@ -470,10 +405,12 @@ void conectarWiFi() {
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WIFI -> CONECTADO");
-    Serial.print("IP ESP32: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("Servidor Flask: ");
-    Serial.println(serverUrl());
+    Serial.print("IP ESP32: "); Serial.println(WiFi.localIP());
+    // Obtener MAC y usarla como código de estación
+    stationCode = WiFi.macAddress();
+    stationCode.replace(":", "");
+    Serial.print("Código estación (MAC): "); Serial.println(stationCode);
+    Serial.print("Servidor Flask: "); Serial.println(serverUrl());
   } else {
     Serial.println("WIFI -> ERROR");
     Serial.println("El monitoreo local continuara.");
@@ -483,7 +420,6 @@ void conectarWiFi() {
 // ============================================================
 //                 RECONEXIÓN WIFI
 // ============================================================
-
 void comprobarWiFi() {
   static unsigned long ultimaComprobacion = 0;
   if (WiFi.status() == WL_CONNECTED) return;
@@ -499,7 +435,6 @@ void comprobarWiFi() {
 // ============================================================
 //                 ENVIAR DATOS A FLASK
 // ============================================================
-
 void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, int cambioAO, int mq2DO, int nivelHumo) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("No se envia: WiFi desconectado");
@@ -510,39 +445,37 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
   String url = serverUrl();
   Serial.println();
   Serial.println("------ ENVIO A FLASK ------");
-  Serial.print("URL: ");
-  Serial.println(url);
+  Serial.print("URL: "); Serial.println(url);
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
 
   StaticJsonDocument<512> doc;
-  doc["api_key"] = API_KEY;
+  doc["api_key"] = DEFAULT_API_KEY;   // Siempre enviamos la clave por defecto
   doc["temperatura"] = temperatura;
   doc["humedad"] = humedad;
   doc["mq2_ao"] = mq2AO;
   doc["mq2_base"] = mq2Base;
   doc["cambio_ao"] = cambioAO;
   doc["mq2_do"] = mq2DO;
-  doc["nivel_humo"] = nivelHumo;  // Este campo no es usado por Flask, pero no molesta
+  doc["nivel_humo"] = nivelHumo;
+  doc["mac"] = stationCode;   // Enviamos la MAC como verificación
 
   String payload;
   serializeJson(doc, payload);
-  Serial.print("JSON: ");
-  Serial.println(payload);
+  Serial.print("JSON: "); Serial.println(payload);
 
   int codigoHTTP = http.POST(payload);
 
   if (codigoHTTP > 0) {
-    Serial.print("HTTP: ");
-    Serial.println(codigoHTTP);
+    Serial.print("HTTP: "); Serial.println(codigoHTTP);
     String respuesta = http.getString();
-    Serial.print("Respuesta Flask: ");
-    Serial.println(respuesta);
+    Serial.print("Respuesta Flask: "); Serial.println(respuesta);
+    // Si el servidor devuelve una nueva API key, se podría almacenar en EEPROM
+    // (extensión futura)
   } else {
-    Serial.print("ERROR HTTP: ");
-    Serial.println(http.errorToString(codigoHTTP));
+    Serial.print("ERROR HTTP: "); Serial.println(http.errorToString(codigoHTTP));
   }
   http.end();
 }
@@ -550,7 +483,6 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
 // ============================================================
 //                       AUTOTEST
 // ============================================================
-
 void autoTest() {
   Serial.println();
   Serial.println("######################################");
@@ -558,20 +490,16 @@ void autoTest() {
   Serial.println("#             AUTOTEST               #");
   Serial.println("######################################");
 
-  Serial.println();
-  Serial.println("[1/3] PRUEBA LED RGB");
+  Serial.println(); Serial.println("[1/3] PRUEBA LED RGB");
   pruebaLED();
 
-  Serial.println();
-  Serial.println("[2/3] PRUEBA DHT22");
+  Serial.println(); Serial.println("[2/3] PRUEBA DHT22");
   bool dhtOK = pruebaDHT22();
 
-  Serial.println();
-  Serial.println("[3/3] PRUEBA MQ-2");
+  Serial.println(); Serial.println("[3/3] PRUEBA MQ-2");
   pruebaMQ2();
 
-  Serial.println();
-  Serial.println("CALIBRACION MQ-2");
+  Serial.println(); Serial.println("CALIBRACION MQ-2");
   calibrarMQ2();
 
   Serial.println();
@@ -592,7 +520,6 @@ void autoTest() {
 // ============================================================
 //                         SETUP
 // ============================================================
-
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -651,7 +578,6 @@ void setup() {
 // ============================================================
 //                          LOOP
 // ============================================================
-
 void loop() {
   comprobarWiFi();
 
@@ -682,20 +608,12 @@ void loop() {
 
   Serial.println();
   Serial.println("--------------------------------------");
-  Serial.print("Temperatura : ");
-  Serial.print(temp, 1);
-  Serial.println(" C");
-  Serial.print("Humedad     : ");
-  Serial.print(hum, 1);
-  Serial.println(" %");
-  Serial.print("MQ-2 AO     : ");
-  Serial.println(aoActual);
-  Serial.print("AO BASE     : ");
-  Serial.println(aoBase);
-  Serial.print("CAMBIO AO   : ");
-  Serial.println(cambioAO);
-  Serial.print("MQ-2 DO     : ");
-  Serial.println(doActual);
+  Serial.print("Temperatura : "); Serial.print(temp, 1); Serial.println(" C");
+  Serial.print("Humedad     : "); Serial.print(hum, 1); Serial.println(" %");
+  Serial.print("MQ-2 AO     : "); Serial.println(aoActual);
+  Serial.print("AO BASE     : "); Serial.println(aoBase);
+  Serial.print("CAMBIO AO   : "); Serial.println(cambioAO);
+  Serial.print("MQ-2 DO     : "); Serial.println(doActual);
 
   imprimirNivelHumo(nivelHumo);
   mostrarCondiciones(temp, hum, nivelHumo, humoDO);
