@@ -2,7 +2,6 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
-#include <ESPmDNS.h>   // Necesario para resolver nombres .local
 
 // ============================================================
 //                     FORESTGUARD
@@ -12,13 +11,12 @@
 // MQ-2  -> Detección de humo/gases
 // RGB   -> Estado del sistema
 //
+// 🔵 AZUL     = CALIBRACIÓN INICIAL (60 segundos)
 // 🟢 VERDE    = NORMAL
 // 🟡 AMARILLO = RIESGO MODERADO
 // 🟠 NARANJO  = RIESGO ALTO
 // 🔴 ROJO     = ALERTA / POSIBLE INCENDIO
-// 🔵 AZUL     = ERROR DHT22
-//
-// ESP32 -> WiFi -> mDNS -> Flask -> MySQL
+// 🔵 AZUL     = ERROR DHT22 (parpadeo)
 // ============================================================
 
 // ============================================================
@@ -39,26 +37,22 @@ const char* WIFI_SSID = "GameofThrones";
 const char* WIFI_PASSWORD = "elsenordelosanillos";
 
 // ============================================================
-//                  CONFIGURACIÓN FLASK (mDNS)
+//                  CONFIGURACIÓN FLASK (IP FIJA)
 // ============================================================
-const char* SERVER_HOSTNAME = "forestguard.local";   // Nombre mDNS
+const char* SERVER_HOST = "192.168.18.116";
 const int SERVER_PORT = 5000;
 
 // ============================================================
 //                  IDENTIFICACIÓN ESTACIÓN (MAC)
 // ============================================================
-// Declarar stationCode ANTES de usarla en serverUrl()
 String stationCode = "";
-String apiKey = "";  // Se leerá de EEPROM o se usará la fija
-
-// Clave por defecto (solo para primer registro)
 const char* DEFAULT_API_KEY = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
 
 // ============================================================
-//                  URL DEL SERVIDOR (AHORA stationCode existe)
+//                  URL DEL SERVIDOR
 // ============================================================
 String serverUrl() {
-  return String("http://") + SERVER_HOSTNAME + ":" + SERVER_PORT +
+  return String("http://") + SERVER_HOST + ":" + SERVER_PORT +
          "/api/estaciones/" + stationCode + "/datos";
 }
 
@@ -72,52 +66,35 @@ DHT dht(DHT_PIN, DHT_TYPE);
 // ============================================================
 const int FRECUENCIA = 5000;
 const int RESOLUCION = 8;
-
-// Canales PWM
 const int CANAL_ROJO  = 0;
 const int CANAL_VERDE = 1;
 const int CANAL_AZUL  = 2;
 
 // ============================================================
-//              UMBRALES DE TEMPERATURA
+//              UMBRALES (iguales para la ESP32 y Flask)
 // ============================================================
 const float TEMP_RIESGO  = 30.0;
 const float TEMP_ALTA    = 35.0;
 const float TEMP_CRITICA = 40.0;
-
-// ============================================================
-//                 UMBRALES DE HUMEDAD
-// ============================================================
 const float HUMEDAD_RIESGO  = 45.0;
 const float HUMEDAD_BAJA    = 30.0;
 const float HUMEDAD_CRITICA = 15.0;
-
-// ============================================================
-//                 NIVELES DE HUMO
-// ============================================================
 const int HUMO_BAJO  = 100;
 const int HUMO_MEDIO = 300;
 const int HUMO_ALTO  = 500;
 
-// ============================================================
-//                  MQ-2 DIGITAL
-// ============================================================
 int estadoDONormal = HIGH;
+int aoBase = 0;
 
 // ============================================================
 //                       TIEMPOS
 // ============================================================
 const unsigned long INTERVALO_LECTURA = 2000;
 const unsigned long INTERVALO_ENVIO = 5000;
-const unsigned long TIEMPO_CALIBRACION = 10000;
+const unsigned long TIEMPO_CALIBRACION = 60000;  // 60 segundos
 
 unsigned long ultimaLectura = 0;
 unsigned long ultimoEnvio = 0;
-
-// ============================================================
-//                VARIABLES DE CALIBRACIÓN
-// ============================================================
-int aoBase = 0;
 
 // ============================================================
 //                    FUNCIONES LED
@@ -167,19 +144,17 @@ void secuenciaInicio() {
   Serial.println("           FORESTGUARD");
   Serial.println("       INICIANDO SISTEMA");
   Serial.println("======================================");
-
   ledRojo(); delay(300);
   ledVerde(); delay(300);
   ledAzul(); delay(300);
   ledAmarillo(); delay(300);
   ledNaranjo(); delay(300);
   ledApagado();
-
   Serial.println("LED RGB -> OK");
 }
 
 // ============================================================
-//                    PRUEBA LED
+//                    PRUEBAS
 // ============================================================
 void pruebaLED() {
   Serial.println();
@@ -193,9 +168,6 @@ void pruebaLED() {
   Serial.println("LED RGB -> OK");
 }
 
-// ============================================================
-//                    PRUEBA DHT22
-// ============================================================
 bool pruebaDHT22() {
   Serial.println();
   Serial.println("------ PRUEBA DHT22 ------");
@@ -212,9 +184,6 @@ bool pruebaDHT22() {
   return true;
 }
 
-// ============================================================
-//                    PRUEBA MQ-2
-// ============================================================
 void pruebaMQ2() {
   Serial.println();
   Serial.println("------ PRUEBA MQ-2 ------");
@@ -226,7 +195,7 @@ void pruebaMQ2() {
 }
 
 // ============================================================
-//                 CALIBRACIÓN MQ-2
+//                 CALIBRACIÓN MQ-2 (60 segundos, LED AZUL)
 // ============================================================
 void calibrarMQ2() {
   Serial.println();
@@ -236,10 +205,10 @@ void calibrarMQ2() {
   Serial.println("NO acerques humo.");
   Serial.println("NO acerques cigarros.");
   Serial.println("NO acerques fuego.");
-  Serial.println("Midiendo ambiente normal...");
+  Serial.println("Midiendo ambiente normal durante 60 segundos...");
   Serial.println();
 
-  ledAmarillo();
+  ledAzul();  // 🔵 AZUL durante calibración
   unsigned long inicio = millis();
   long sumaAO = 0;
   int cantidad = 0;
@@ -252,7 +221,12 @@ void calibrarMQ2() {
     cantidad++;
     if (estadoDO == HIGH) high++; else low++;
     delay(250);
+    // Mostrar progreso cada 5 segundos
+    if ((millis() - inicio) % 5000 < 250) {
+      Serial.print(".");
+    }
   }
+  Serial.println();
 
   if (cantidad > 0) aoBase = sumaAO / cantidad;
   estadoDONormal = (high >= low) ? HIGH : LOW;
@@ -263,7 +237,7 @@ void calibrarMQ2() {
   Serial.print("DO NORMAL   = "); Serial.println(estadoDONormal);
   Serial.println("--------------------------------------");
   Serial.println("CALIBRACION TERMINADA");
-  ledVerde();
+  ledVerde();  // Volver a verde
 }
 
 // ============================================================
@@ -277,9 +251,6 @@ int obtenerNivelHumo(int cambioAO, bool humoDO) {
   return 0;
 }
 
-// ============================================================
-//              MOSTRAR NIVEL DE HUMO
-// ============================================================
 void imprimirNivelHumo(int nivelHumo) {
   Serial.print("NIVEL HUMO  : ");
   if (nivelHumo == 0) Serial.println("NINGUNO");
@@ -294,7 +265,6 @@ void imprimirNivelHumo(int nivelHumo) {
 void mostrarCondiciones(float temp, float hum, int nivelHumo, bool humoDO) {
   Serial.println();
   Serial.println("-------- CONDICIONES --------");
-
   if (temp >= TEMP_CRITICA) Serial.println("TEMPERATURA CRITICA");
   else if (temp >= TEMP_ALTA) Serial.println("TEMPERATURA ALTA");
   else if (temp >= TEMP_RIESGO) Serial.println("TEMPERATURA ELEVADA");
@@ -392,7 +362,6 @@ void conectarWiFi() {
   Serial.println("======================================");
   Serial.println("             CONEXION WIFI");
   Serial.println("======================================");
-
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Conectando");
@@ -407,27 +376,16 @@ void conectarWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WIFI -> CONECTADO");
     Serial.print("IP ESP32: "); Serial.println(WiFi.localIP());
-    // Obtener MAC y usarla como código de estación
     stationCode = WiFi.macAddress();
     stationCode.replace(":", "");
     Serial.print("Código estación (MAC): "); Serial.println(stationCode);
-    Serial.print("Servidor Flask (mDNS): "); Serial.println(serverUrl());
-
-    // Iniciar mDNS para resolver nombres .local
-    if (MDNS.begin("esp32")) {
-      Serial.println("mDNS iniciado correctamente.");
-    } else {
-      Serial.println("Error al iniciar mDNS.");
-    }
+    Serial.print("Servidor Flask: "); Serial.println(serverUrl());
   } else {
     Serial.println("WIFI -> ERROR");
     Serial.println("El monitoreo local continuará.");
   }
 }
 
-// ============================================================
-//                 RECONEXIÓN WIFI
-// ============================================================
 void comprobarWiFi() {
   static unsigned long ultimaComprobacion = 0;
   if (WiFi.status() == WL_CONNECTED) return;
@@ -459,9 +417,8 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
 
-  // Usar JsonDocument (nuevo, sin deprecación)
   JsonDocument doc;
-  doc["api_key"] = DEFAULT_API_KEY;   // Siempre enviamos la clave por defecto
+  doc["api_key"] = DEFAULT_API_KEY;
   doc["temperatura"] = temperatura;
   doc["humedad"] = humedad;
   doc["mq2_ao"] = mq2AO;
@@ -469,20 +426,17 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
   doc["cambio_ao"] = cambioAO;
   doc["mq2_do"] = mq2DO;
   doc["nivel_humo"] = nivelHumo;
-  doc["mac"] = stationCode;   // Enviamos la MAC como verificación
+  doc["mac"] = stationCode;   // Enviamos la MAC para verificar
 
   String payload;
   serializeJson(doc, payload);
   Serial.print("JSON: "); Serial.println(payload);
 
   int codigoHTTP = http.POST(payload);
-
   if (codigoHTTP > 0) {
     Serial.print("HTTP: "); Serial.println(codigoHTTP);
     String respuesta = http.getString();
     Serial.print("Respuesta Flask: "); Serial.println(respuesta);
-    // Si el servidor devuelve una nueva API key, se podría almacenar en EEPROM
-    // (extensión futura)
   } else {
     Serial.print("ERROR HTTP: "); Serial.println(http.errorToString(codigoHTTP));
   }
@@ -508,20 +462,18 @@ void autoTest() {
   Serial.println(); Serial.println("[3/3] PRUEBA MQ-2");
   pruebaMQ2();
 
-  Serial.println(); Serial.println("CALIBRACION MQ-2");
+  Serial.println(); Serial.println("CALIBRACION MQ-2 (60 segundos con LED AZUL)");
   calibrarMQ2();
 
   Serial.println();
   Serial.println("======================================");
   Serial.println("          AUTOTEST TERMINADO");
   Serial.println("======================================");
-
   if (dhtOK) Serial.println("DHT22 -> OK");
   else Serial.println("DHT22 -> ERROR");
   Serial.println("MQ-2 AO -> SEÑAL RECIBIDA");
   Serial.println("MQ-2 DO -> SEÑAL RECIBIDA");
   Serial.println();
-
   ledVerde();
   delay(1000);
 }
@@ -559,7 +511,6 @@ void setup() {
   // MQ-2
   pinMode(MQ2_AO, INPUT);
   pinMode(MQ2_DO, INPUT);
-
   // DHT22
   dht.begin();
 
@@ -567,7 +518,7 @@ void setup() {
   secuenciaInicio();
   delay(1000);
 
-  // AUTOTEST
+  // AUTOTEST (incluye calibración de 60 segundos con LED azul)
   autoTest();
 
   // WIFI
@@ -591,7 +542,6 @@ void loop() {
   comprobarWiFi();
 
   unsigned long tiempoActual = millis();
-
   if (tiempoActual - ultimaLectura < INTERVALO_LECTURA) return;
   ultimaLectura = tiempoActual;
 

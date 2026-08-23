@@ -13,6 +13,9 @@ import secrets
 import datetime
 import re
 from math import radians, sin, cos, sqrt, atan2
+import socket
+import threading
+import time
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -26,6 +29,10 @@ ESTADO_SENSOR = {'ACTIVO': 1, 'ERROR': 2, 'SIN_DATOS': 3}
 ESTADO_ALERTA = {'ACTIVA': 1, 'ATENDIDA': 2, 'RESUELTA': 3, 'FALSA': 4}
 ROLES_GESTION_ALERTAS = ('ADMINISTRADOR', 'BOMBERO', 'OPERADOR')
 ROLES_ADMIN = ('ADMINISTRADOR',)
+
+# Coordenadas por defecto para estaciones auto-registradas (ejemplo: Santiago, Chile)
+DEFAULT_LAT = -33.4569
+DEFAULT_LON = -70.6483
 
 # =====================================================================
 # DECORADORES
@@ -245,7 +252,6 @@ def obtener_estacion_con_ultima_medicion(id_estacion):
     """, (id_estacion,))
 
 def generar_codigo_unico():
-    """Genera un código hexadecimal de 8 caracteres que no exista en la BD."""
     while True:
         codigo = secrets.token_hex(4).upper()
         if not db.get_one("SELECT id_estacion FROM estaciones WHERE codigo = %s", (codigo,)):
@@ -317,11 +323,13 @@ def logout():
 @login_required
 def dashboard():
     verificar_estaciones_offline()
+    # ÚLTIMA MEDICIÓN: solo de estaciones activas
     ultima_medicion = db.get_one("""
         SELECT m.*, e.nombre as estacion, th.nombre as humo_nombre
         FROM mediciones m
         JOIN estaciones e ON m.id_estacion = e.id_estacion
         LEFT JOIN tipos_humo th ON m.id_tipo_humo = th.id_tipo_humo
+        WHERE e.activa = 1
         ORDER BY m.fecha_hora DESC LIMIT 1
     """)
     riesgo_actual = db.get_one("""
@@ -533,9 +541,9 @@ def nueva_estacion():
         api_key = secrets.token_hex(16)
         try:
             if not latitud:
-                latitud = 0.0
+                latitud = DEFAULT_LAT
             if not longitud:
-                longitud = 0.0
+                longitud = DEFAULT_LON
             db.execute_query("""
                 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s)
@@ -571,7 +579,7 @@ def editar_estacion(id_estacion):
         id_zona = request.form.get('id_zona')
         descripcion = request.form.get('descripcion')
         activa = 'activa' in request.form
-        api_key = request.form.get('api_key')  # NUEVO: permitir cambiar la API key
+        api_key = request.form.get('api_key')
         try:
             db.execute_query("""
                 UPDATE estaciones 
@@ -873,20 +881,15 @@ def sensores():
 @login_required
 @admin_required
 def configuracion():
-    claves = ['temp_riesgo', 'temp_alta', 'temp_critica', 'hum_riesgo', 'hum_baja', 'hum_critica',
-              'humo_bajo', 'humo_medio', 'humo_alto', 'offline_timeout']
     if request.method == 'POST':
-        for clave in claves:
-            valor = request.form.get(clave)
-            if valor:
-                db.execute_query("UPDATE configuracion SET valor = %s WHERE clave = %s", (valor, clave))
         session['notificaciones'] = 'notificaciones' in request.form
         session['auto_update'] = 'auto_update' in request.form
-        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje='Umbrales actualizados')
-        flash('Configuración actualizada', 'success')
-    config = {row['clave']: row['valor'] for row in db.get_all("SELECT clave, valor FROM configuracion")}
-    config['notificaciones'] = session.get('notificaciones', True)
-    config['auto_update'] = session.get('auto_update', True)
+        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje='Preferencias actualizadas')
+        flash('Preferencias actualizadas', 'success')
+    config = {
+        'notificaciones': session.get('notificaciones', True),
+        'auto_update': session.get('auto_update', True)
+    }
     return render_template('configuracion.html',
         page="configuracion",
         title="Configuración",
@@ -1058,7 +1061,7 @@ def admin():
     )
 
 # =====================================================================
-# API - INGESTA DE DATOS DE LA ESP32 (CON AUTO-REGISTRO Y ESTADO PENDIENTE)
+# API - INGESTA DE DATOS DE LA ESP32 (CON AUTO-REGISTRO MEJORADO)
 # =====================================================================
 @app.route('/api/estaciones/<codigo>/datos', methods=['POST'])
 def api_recibir_datos(codigo):
@@ -1071,23 +1074,24 @@ def api_recibir_datos(codigo):
     # Buscar la estación por código
     estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
 
-    # ============================================================
-    # AUTO-REGISTRO: si no existe, crearla en estado PENDIENTE
-    # ============================================================
+    # AUTO-REGISTRO MEJORADO: si no existe, crearla en estado PENDIENTE
     if not estacion:
         try:
-            # Crear estación con estado PENDIENTE y activa=0
+            # Insertar con coordenadas por defecto
             db.execute_query("""
                 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
-                VALUES (%s, %s, %s, NULL, 0.0, 0.0, %s, 0, %s)
-            """, (f"Auto-{codigo}", codigo, data['api_key'], "Estación registrada automáticamente - pendiente de aprobación", ESTADO_ESTACION['PENDIENTE']))
+                VALUES (%s, %s, %s, NULL, %s, %s, %s, 0, %s)
+            """, (f"Auto-{codigo}", codigo, data['api_key'], DEFAULT_LAT, DEFAULT_LON,
+                  "Estación registrada automáticamente - pendiente de aprobación", ESTADO_ESTACION['PENDIENTE']))
 
-            # Obtener la estación recién creada
+            # Volver a buscar la estación recién creada
             estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
-            print(f"✅ Estación registrada automáticamente (pendiente): {codigo} con API key {data['api_key']}")
+            if not estacion:
+                return jsonify({'error': 'No se pudo recuperar la estación registrada'}), 500
 
-            # Registrar evento
-            registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'], mensaje=f"Estación auto-registrada {codigo} (pendiente)")
+            print(f"✅ Estación registrada automáticamente (pendiente): {codigo} con API key {data['api_key']}")
+            registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'],
+                            mensaje=f"Estación auto-registrada {codigo} (pendiente)")
 
         except Exception as e:
             print(f"❌ Error al registrar estación automáticamente: {e}")
@@ -1097,7 +1101,7 @@ def api_recibir_datos(codigo):
     if not estacion:
         return jsonify({'error': 'Estación no registrada y no se pudo auto-registrar'}), 404
 
-    # Verificar API key (la que envía la ESP32 debe coincidir con la almacenada)
+    # Verificar API key
     if estacion['api_key'] != data['api_key']:
         return jsonify({'error': 'api_key inválida'}), 401
 
@@ -1118,15 +1122,13 @@ def api_recibir_datos(codigo):
         cambio_ao = mq2_ao - mq2_base
         mq2_ok = True
 
-    # Obtener umbrales para evaluación (solo si se requiere)
     umbrales = obtener_umbrales(id_estacion)
 
-    # Determinar id_tipo_humo usando el nivel enviado por la ESP32 si existe
+    # Usar el nivel_humo enviado por la ESP32 (prioridad total)
     nivel_humo_enviado = data.get('nivel_humo')
     if nivel_humo_enviado is not None:
         id_tipo_humo = mapear_nivel_humo_a_id(nivel_humo_enviado)
     else:
-        # Fallback: recalcular con los umbrales de Flask
         nivel_humo_num, id_tipo_humo = clasificar_humo(cambio_ao if mq2_ok else None, umbrales)
 
     id_medicion = db.execute_query("""
@@ -1172,7 +1174,6 @@ def api_recibir_datos(codigo):
 
     respuesta_riesgo = 'SIN_EVALUAR'
     if not hubo_error_sensor:
-        # Usamos el nivel_humo que ya tenemos (id_tipo_humo) para evaluar riesgo
         nivel_humo_num = db.get_one("SELECT nivel FROM tipos_humo WHERE id_tipo_humo = %s", (id_tipo_humo,))
         nivel_humo_num = nivel_humo_num['nivel'] if nivel_humo_num else 0
         nivel_riesgo, tipo_alerta, condiciones = evaluar_riesgo(temperatura, humedad, nivel_humo_num, umbrales)
@@ -1307,6 +1308,22 @@ def api_alertas_activas():
     return jsonify(result)
 
 # =====================================================================
+# NUEVA RUTA: DESCUBRIMIENTO DEL SERVIDOR (UDP broadcast)
+# =====================================================================
+@app.route('/api/discover', methods=['GET'])
+def discover():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return jsonify({'server_ip': ip})
+
+# =====================================================================
 # ERRORES
 # =====================================================================
 @app.errorhandler(404)
@@ -1317,9 +1334,32 @@ def not_found(e):
 def server_error(e):
     return render_template('error.html', codigo=500, mensaje='Error interno del servidor'), 500
 
+def udp_discovery_server():
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.bind(('', 12345))
+    print("UDP Discovery server escuchando en puerto 12345...")
+    while True:
+        data, addr = sock.recvfrom(1024)
+        if data == b'FORESTGUARD_DISCOVER':
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(('8.8.8.8', 1))
+                ip = s.getsockname()[0]
+            except:
+                ip = '127.0.0.1'
+            finally:
+                s.close()
+            response = f"SERVER_IP:{ip}".encode()
+            sock.sendto(response, addr)
+            print(f"Respondido a {addr} con IP {ip}")
+
 # =====================================================================
 # INICIO
 # =====================================================================
 if __name__ == '__main__':
     init_db()
+    threading.Thread(target=udp_discovery_server, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=True)
