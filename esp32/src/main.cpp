@@ -2,7 +2,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
-#include <EEPROM.h>
+#include <ESPmDNS.h>   // Necesario para resolver nombres .local
 
 // ============================================================
 //                     FORESTGUARD
@@ -18,7 +18,7 @@
 // 🔴 ROJO     = ALERTA / POSIBLE INCENDIO
 // 🔵 AZUL     = ERROR DHT22
 //
-// ESP32 -> WiFi -> Flask -> MySQL
+// ESP32 -> WiFi -> mDNS -> Flask -> MySQL
 // ============================================================
 
 // ============================================================
@@ -39,14 +39,15 @@ const char* WIFI_SSID = "GameofThrones";
 const char* WIFI_PASSWORD = "elsenordelosanillos";
 
 // ============================================================
-//                  CONFIGURACIÓN FLASK
+//                  CONFIGURACIÓN FLASK (mDNS)
 // ============================================================
-const char* SERVER_HOST = "192.168.18.116";   // IP de tu PC
+const char* SERVER_HOSTNAME = "forestguard.local";   // Nombre mDNS
 const int SERVER_PORT = 5000;
 
 // ============================================================
 //                  IDENTIFICACIÓN ESTACIÓN (MAC)
 // ============================================================
+// Declarar stationCode ANTES de usarla en serverUrl()
 String stationCode = "";
 String apiKey = "";  // Se leerá de EEPROM o se usará la fija
 
@@ -54,10 +55,10 @@ String apiKey = "";  // Se leerá de EEPROM o se usará la fija
 const char* DEFAULT_API_KEY = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
 
 // ============================================================
-//                  URL DEL SERVIDOR
+//                  URL DEL SERVIDOR (AHORA stationCode existe)
 // ============================================================
 String serverUrl() {
-  return String("http://") + SERVER_HOST + ":" + SERVER_PORT +
+  return String("http://") + SERVER_HOSTNAME + ":" + SERVER_PORT +
          "/api/estaciones/" + stationCode + "/datos";
 }
 
@@ -410,10 +411,17 @@ void conectarWiFi() {
     stationCode = WiFi.macAddress();
     stationCode.replace(":", "");
     Serial.print("Código estación (MAC): "); Serial.println(stationCode);
-    Serial.print("Servidor Flask: "); Serial.println(serverUrl());
+    Serial.print("Servidor Flask (mDNS): "); Serial.println(serverUrl());
+
+    // Iniciar mDNS para resolver nombres .local
+    if (MDNS.begin("esp32")) {
+      Serial.println("mDNS iniciado correctamente.");
+    } else {
+      Serial.println("Error al iniciar mDNS.");
+    }
   } else {
     Serial.println("WIFI -> ERROR");
-    Serial.println("El monitoreo local continuara.");
+    Serial.println("El monitoreo local continuará.");
   }
 }
 
@@ -451,7 +459,8 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
 
-  StaticJsonDocument<512> doc;
+  // Usar JsonDocument (nuevo, sin deprecación)
+  JsonDocument doc;
   doc["api_key"] = DEFAULT_API_KEY;   // Siempre enviamos la clave por defecto
   doc["temperatura"] = temperatura;
   doc["humedad"] = humedad;

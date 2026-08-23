@@ -261,7 +261,6 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     return R * c
 
 def mapear_nivel_humo_a_id(nivel):
-    """Convierte nivel 0-3 a id_tipo_humo según la tabla tipos_humo."""
     if nivel is None:
         return None
     fila = db.get_one("SELECT id_tipo_humo FROM tipos_humo WHERE nivel = %s", (nivel,))
@@ -460,12 +459,11 @@ def aprobar_estacion(id_estacion):
     if not est:
         flash('Estación no encontrada', 'danger')
         return redirect(url_for('pendientes'))
-    # Cambiar a ONLINE y activa=1
-    nueva_api_key = secrets.token_hex(16)
+    # Cambiar a ONLINE y activa=1, PERO CONSERVAR LA API KEY EXISTENTE
     db.execute_query("""
-        UPDATE estaciones SET activa = 1, id_estado_estacion = %s, api_key = %s
+        UPDATE estaciones SET activa = 1, id_estado_estacion = %s
         WHERE id_estacion = %s
-    """, (ESTADO_ESTACION['ONLINE'], nueva_api_key, id_estacion))
+    """, (ESTADO_ESTACION['ONLINE'], id_estacion))
     registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} aprobada")
     flash('Estación aprobada correctamente', 'success')
     return redirect(url_for('pendientes'))
@@ -573,11 +571,15 @@ def editar_estacion(id_estacion):
         id_zona = request.form.get('id_zona')
         descripcion = request.form.get('descripcion')
         activa = 'activa' in request.form
+        api_key = request.form.get('api_key')  # NUEVO: permitir cambiar la API key
         try:
             db.execute_query("""
-                UPDATE estaciones SET nombre=%s, codigo=%s, id_zona=%s, latitud=%s, longitud=%s, descripcion=%s, activa=%s
+                UPDATE estaciones 
+                SET nombre=%s, codigo=%s, id_zona=%s, latitud=%s, longitud=%s, 
+                    descripcion=%s, activa=%s, api_key=%s
                 WHERE id_estacion=%s
-            """, (nombre, codigo, id_zona or None, latitud or None, longitud or None, descripcion, activa, id_estacion))
+            """, (nombre, codigo, id_zona or None, latitud or None, longitud or None, 
+                  descripcion, activa, api_key, id_estacion))
             flash('Estación actualizada', 'success')
             registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {nombre} editada")
             return redirect(url_for('listar_estaciones'))
