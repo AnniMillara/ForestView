@@ -64,7 +64,6 @@ gestion_alertas_required = roles_required(*ROLES_GESTION_ALERTAS)
 @app.context_processor
 def inject_alertas_count():
     if 'usuario_id' in session:
-        # Solo contar alertas de estaciones activas
         count = db.get_one("""
             SELECT COUNT(*) as count FROM alertas a
             JOIN estaciones e ON a.id_estacion = e.id_estacion
@@ -114,6 +113,12 @@ def init_db():
         if not db.get_one("SELECT id_estado_estacion FROM estados_estacion WHERE nombre = %s", (nombre,)):
             db.execute_query("INSERT INTO estados_estacion (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
             print(f"✅ Estado '{nombre}' agregado.")
+
+    # Crear tipos de sensor si no existen (DHT22 y MQ-2)
+    for nombre in ['DHT22', 'MQ-2']:
+        if not db.get_one("SELECT id_tipo_sensor FROM tipos_sensor WHERE nombre = %s", (nombre,)):
+            db.execute_query("INSERT INTO tipos_sensor (nombre, descripcion) VALUES (%s, %s)", (nombre, f'Sensor {nombre}'))
+            print(f"✅ Tipo sensor '{nombre}' agregado.")
 
 # =====================================================================
 # HELPERS DE NEGOCIO
@@ -264,7 +269,6 @@ def verificar_estaciones_offline():
                     est['id_estacion'], 'ESTACION_OFFLINE', 'RIESGO_MODERADO',
                     'Estación desconectada', 'La estación dejó de reportar datos'
                 )
-        # Si está ONLINE y tiene alerta de OFFLINE, resolverla
         elif est['id_estado_estacion'] == ESTADO_ESTACION['ONLINE']:
             db.execute_query("""
                 UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
@@ -309,6 +313,26 @@ def mapear_nivel_humo_a_id(nivel):
         return None
     fila = db.get_one("SELECT id_tipo_humo FROM tipos_humo WHERE nivel = %s", (nivel,))
     return fila['id_tipo_humo'] if fila else None
+
+def crear_sensores_estacion(id_estacion):
+    """Crea los sensores DHT22 y MQ-2 para una estación si no existen."""
+    tipos = {
+        'DHT22': {'id_tipo': 1, 'pin': 13, 'canal': 'DATA', 'desc': 'DHT22'},
+        'MQ-2': {'id_tipo': 2, 'pin': 35, 'canal': 'AO', 'desc': 'MQ-2 analógico'}
+    }
+    for nombre, datos in tipos.items():
+        # Verificar si ya existe un sensor de ese tipo para la estación
+        existente = db.get_one(
+            "SELECT id_sensor FROM sensores WHERE id_estacion = %s AND id_tipo_sensor = %s",
+            (id_estacion, datos['id_tipo'])
+        )
+        if not existente:
+            # Insertar el sensor con estado SIN_DATOS (3)
+            db.execute_query("""
+                INSERT INTO sensores (id_estacion, id_tipo_sensor, id_estado_sensor, pin_gpio, canal, descripcion)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (id_estacion, datos['id_tipo'], ESTADO_SENSOR['SIN_DATOS'], datos['pin'], datos['canal'], datos['desc']))
+            print(f"✅ Sensor {nombre} creado para estación {id_estacion}")
 
 # =====================================================================
 # RUTAS PÚBLICAS
@@ -505,10 +529,13 @@ def aprobar_estacion(id_estacion):
     if not est:
         flash('Estación no encontrada', 'danger')
         return redirect(url_for('pendientes'))
+    # Activar y poner ONLINE
     db.execute_query("""
         UPDATE estaciones SET activa = 1, id_estado_estacion = %s
         WHERE id_estacion = %s
     """, (ESTADO_ESTACION['ONLINE'], id_estacion))
+    # Asegurar que los sensores existan
+    crear_sensores_estacion(id_estacion)
     registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} aprobada")
     flash('Estación aprobada correctamente', 'success')
     return redirect(url_for('pendientes'))
@@ -554,6 +581,8 @@ def reactivar_estacion(id_estacion):
     if est:
         db.execute_query("UPDATE estaciones SET activa = 1, id_estado_estacion = %s WHERE id_estacion = %s",
                          (ESTADO_ESTACION['ONLINE'], id_estacion))
+        # Asegurar sensores
+        crear_sensores_estacion(id_estacion)
         registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} reactivada")
         flash('Estación reactivada', 'success')
     else:
@@ -590,6 +619,10 @@ def nueva_estacion():
                 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s)
             """, (nombre, codigo, api_key, id_zona or None, latitud, longitud, descripcion, ESTADO_ESTACION['ONLINE']))
+            # Obtener el ID de la nueva estación
+            nueva_est = db.get_one("SELECT id_estacion FROM estaciones WHERE codigo = %s", (codigo,))
+            if nueva_est:
+                crear_sensores_estacion(nueva_est['id_estacion'])
             flash(f'✅ Estación "{nombre}" creada exitosamente.\nCódigo: {codigo}\nAPI Key: {api_key}', 'success')
             registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {nombre} creada con código {codigo}")
             return redirect(url_for('listar_estaciones'))
@@ -620,7 +653,7 @@ def editar_estacion(id_estacion):
         longitud = request.form.get('longitud')
         id_zona = request.form.get('id_zona')
         descripcion = request.form.get('descripcion')
-        activa = 'activa' in request.form
+        activa = 1 if 'activa' in request.form else 0
         api_key = request.form.get('api_key')
         try:
             db.execute_query("""
@@ -630,6 +663,9 @@ def editar_estacion(id_estacion):
                 WHERE id_estacion=%s
             """, (nombre, codigo, id_zona or None, latitud or None, longitud or None, 
                   descripcion, activa, api_key, id_estacion))
+            # Si se activó, asegurar sensores
+            if activa:
+                crear_sensores_estacion(id_estacion)
             flash('Estación actualizada', 'success')
             registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {nombre} editada")
             return redirect(url_for('listar_estaciones'))
@@ -669,6 +705,7 @@ def eliminar_estacion(id_estacion):
 @admin_required
 def activar_estacion(id_estacion):
     db.execute_query("UPDATE estaciones SET activa = 1 WHERE id_estacion = %s", (id_estacion,))
+    crear_sensores_estacion(id_estacion)
     flash('Estación activada', 'success')
     return redirect(url_for('listar_estaciones'))
 
@@ -894,26 +931,22 @@ def sensores():
                es.nombre as estado_nombre,
                (SELECT temperatura FROM mediciones WHERE id_estacion = e.id_estacion ORDER BY fecha_hora DESC LIMIT 1) as ult_temp,
                (SELECT humedad FROM mediciones WHERE id_estacion = e.id_estacion ORDER BY fecha_hora DESC LIMIT 1) as ult_humedad,
-               TIMESTAMPDIFF(SECOND, e.ultima_conexion, NOW()) as segundos_desde_ultima
+               (SELECT th.nombre FROM mediciones m JOIN tipos_humo th ON m.id_tipo_humo = th.id_tipo_humo WHERE m.id_estacion = e.id_estacion ORDER BY m.fecha_hora DESC LIMIT 1) as ult_humo,
+               TIMESTAMPDIFF(SECOND, e.ultima_conexion, NOW()) as segundos_desde_ultima,
+               (SELECT es.nombre FROM sensores s JOIN estados_sensor es ON s.id_estado_sensor = es.id_estado_sensor WHERE s.id_estacion = e.id_estacion AND s.id_tipo_sensor = 1 LIMIT 1) as dht_estado,
+               (SELECT es.nombre FROM sensores s JOIN estados_sensor es ON s.id_estado_sensor = es.id_estado_sensor WHERE s.id_estacion = e.id_estacion AND s.id_tipo_sensor = 2 LIMIT 1) as mq2_estado
         FROM estaciones e
         LEFT JOIN zonas z ON e.id_zona = z.id_zona
         JOIN estados_estacion es ON e.id_estado_estacion = es.id_estado_estacion
         WHERE e.activa = 1
         ORDER BY e.nombre
     """)
+    # Asegurar valores por defecto
     for est in estaciones:
-        dht = db.get_one("""
-            SELECT es.nombre as estado FROM sensores s
-            JOIN estados_sensor es ON s.id_estado_sensor = es.id_estado_sensor
-            WHERE s.id_estacion = %s AND s.id_tipo_sensor = 1
-        """, (est['id_estacion'],))
-        est['dht_estado'] = dht['estado'] if dht else 'SIN_DATOS'
-        mq2 = db.get_one("""
-            SELECT es.nombre as estado FROM sensores s
-            JOIN estados_sensor es ON s.id_estado_sensor = es.id_estado_sensor
-            WHERE s.id_estacion = %s AND s.id_tipo_sensor = 2
-        """, (est['id_estacion'],))
-        est['mq2_estado'] = mq2['estado'] if mq2 else 'SIN_DATOS'
+        if not est.get('dht_estado'):
+            est['dht_estado'] = 'SIN_DATOS'
+        if not est.get('mq2_estado'):
+            est['mq2_estado'] = 'SIN_DATOS'
     return render_template('sensores.html',
         page="sensores",
         title="Sensores",
@@ -1177,6 +1210,9 @@ def api_recibir_datos(codigo):
 
     registrar_evento('LECTURA_RECIBIDA', id_estacion=id_estacion, mensaje='Medición recibida')
 
+    # Asegurar que los sensores existen
+    crear_sensores_estacion(id_estacion)
+
     def actualizar_estado_sensor(id_tipo, ok):
         sensor = db.get_one("SELECT * FROM sensores WHERE id_estacion = %s AND id_tipo_sensor = %s", (id_estacion, id_tipo))
         if sensor:
@@ -1191,9 +1227,11 @@ def api_recibir_datos(codigo):
 
     hubo_error_sensor = not dht_ok or not mq2_ok
 
+    # Actualizar última conexión y IP
     db.execute_query("UPDATE estaciones SET ultima_conexion = NOW(), ip = %s WHERE id_estacion = %s", (request.remote_addr, id_estacion))
     db.execute_query("INSERT INTO historial_conexiones (id_estacion, ip) VALUES (%s, %s)", (id_estacion, request.remote_addr))
 
+    # Cambiar estado de la estación según el estado de los sensores
     if hubo_error_sensor:
         cambiar_estado_estacion(id_estacion, 'ERROR')
         crear_o_actualizar_alerta(
@@ -1313,7 +1351,7 @@ def api_set_location():
         return jsonify({'error': 'Lat/Lon inválidos'}), 400
 
 # =====================================================================
-# NUEVA API: OBTENER ALERTAS ACTIVAS CON DISTANCIA (SOLO ESTACIONES ACTIVAS)
+# NUEVA API: OBTENER ALERTAS ACTIVAS CON DISTANCIA
 # =====================================================================
 @app.route('/api/alertas_activas')
 @login_required

@@ -2413,3 +2413,145 @@ input {
     background: #fef9e7;
     color: #d97706;
 }
+
+/* =========================================================
+   ESTADOS DE SENSORES Y COMPONENTES
+========================================================= */
+.estado-pill {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.estado-pill.estado-online,
+.estado-pill.activo,
+.estado-pill.estado-sensor-activo {
+    background: #eaf8ef;
+    color: #159447;
+}
+
+.estado-pill.estado-offline,
+.estado-pill.inactivo {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.estado-pill.estado-error,
+.estado-pill.error,
+.estado-pill.estado-sensor-error {
+    background: #fff0f0;
+    color: #dc3d3d;
+}
+
+.estado-pill.estado-sin_datos,
+.estado-pill.sin_datos,
+.estado-pill.estado-sensor-sin_datos {
+    background: #fef9e7;
+    color: #d97706;
+}
+
+.estado-pill.estado-pendiente {
+    background: #fef9e7;
+    color: #d97706;
+}
+
+/* Tarjetas de sensores clickeables */
+.sensor-card {
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.sensor-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+}
+
+.sensor-card.selected {
+    border: 2px solid #0b4d26;
+    box-shadow: 0 0 0 4px rgba(11, 77, 38, 0.15);
+}
+
+/* Estilos para los estados de los componentes en la sección HARDWARE */
+.component .estado-pill {
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+/* =========================================================
+   ESTADOS DE SENSORES Y COMPONENTES
+========================================================= */
+.estado-pill {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.estado-pill.estado-online,
+.estado-pill.activo,
+.estado-pill.estado-sensor-activo {
+    background: #eaf8ef;
+    color: #159447;
+}
+
+.estado-pill.estado-offline,
+.estado-pill.inactivo {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.estado-pill.estado-error,
+.estado-pill.error,
+.estado-pill.estado-sensor-error {
+    background: #fff0f0;
+    color: #dc3d3d;
+}
+
+.estado-pill.estado-sin_datos,
+.estado-pill.sin_datos,
+.estado-pill.estado-sensor-sin_datos {
+    background: #fef9e7;
+    color: #d97706;
+}
+
+.estado-pill.estado-pendiente {
+    background: #fef9e7;
+    color: #d97706;
+}
+
+/* Tarjetas de sensores clickeables */
+.sensor-card {
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.sensor-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+}
+
+.sensor-card.selected {
+    border: 2px solid #0b4d26;
+    box-shadow: 0 0 0 4px rgba(11, 77, 38, 0.15);
+}
+
+/* Estilos para los estados de los componentes en la sección HARDWARE */
+.component .estado-pill {
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 700;
+    text-transform: uppercase;
+}

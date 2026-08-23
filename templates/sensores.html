@@ -11,9 +11,11 @@
     <p>Estado de los dispositivos instalados en las zonas monitoreadas.</p>
 </div>
 
-<div class="sensor-grid">
+<div class="sensor-grid" id="sensorGrid">
     {% for est in estaciones %}
-    <div class="sensor-card {% if est.id_estado_estacion != 1 %}offline-card{% endif %}">
+    <div class="sensor-card {% if est.id_estado_estacion != 1 %}offline-card{% endif %}" 
+         data-station='{{ est|tojson }}'
+         onclick="selectStation(this)">
         <div class="sensor-top">
             <div class="sensor-device-icon"><i class="fa-solid fa-microchip"></i></div>
             <span class="sensor-{% if est.id_estado_estacion == 1 %}online{% else %}offline{% endif %}">
@@ -43,12 +45,12 @@
     {% endfor %}
 </div>
 
-<!-- HARDWARE -->
-<div class="panel sensor-components">
+<!-- HARDWARE DINÁMICO -->
+<div class="panel sensor-components" id="hardwarePanel">
     <div class="panel-header">
         <div>
             <span class="panel-label">HARDWARE</span>
-            <h3>Componentes de la estación</h3>
+            <h3>Componentes de la estación <span id="selectedStationName" style="font-weight:400;color:#718078;font-size:14px;"></span></h3>
         </div>
     </div>
     <div class="component-list">
@@ -58,7 +60,7 @@
                 <strong>ESP32</strong>
                 <span>Controlador principal</span>
             </div>
-            <b style="color: #159447;">ACTIVO</b>
+            <span class="estado-pill" id="status-esp32">SIN_DATOS</span>
         </div>
         <div class="component">
             <i class="fa-solid fa-temperature-half"></i>
@@ -66,7 +68,7 @@
                 <strong>DHT22</strong>
                 <span>Temperatura y humedad</span>
             </div>
-            <b style="color: #159447;">ACTIVO</b>
+            <span class="estado-pill" id="status-dht">SIN_DATOS</span>
         </div>
         <div class="component">
             <i class="fa-solid fa-smog"></i>
@@ -74,8 +76,120 @@
                 <strong>MQ-2</strong>
                 <span>Detección de humo y gases</span>
             </div>
-            <b style="color: #159447;">ACTIVO</b>
+            <span class="estado-pill" id="status-mq2">SIN_DATOS</span>
         </div>
     </div>
 </div>
+
+<style>
+    .sensor-card {
+        cursor: pointer;
+        transition: 0.2s ease;
+    }
+    .sensor-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    }
+    .sensor-card.selected {
+        border: 2px solid #0b4d26;
+        box-shadow: 0 0 0 4px rgba(11, 77, 38, 0.15);
+    }
+    .component .estado-pill {
+        font-size: 10px;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+    .estado-pill.estado-online, .estado-pill.activo {
+        background: #eaf8ef;
+        color: #159447;
+    }
+    .estado-pill.estado-offline, .estado-pill.inactivo {
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+    .estado-pill.estado-error, .estado-pill.error {
+        background: #fff0f0;
+        color: #dc3d3d;
+    }
+    .estado-pill.estado-sin_datos, .estado-pill.sin_datos {
+        background: #fef9e7;
+        color: #d97706;
+    }
+    .estado-pill.estado-pendiente {
+        background: #fef9e7;
+        color: #d97706;
+    }
+    /* Para sensores */
+    .estado-pill.estado-sensor-activo {
+        background: #eaf8ef;
+        color: #159447;
+    }
+    .estado-pill.estado-sensor-error {
+        background: #fff0f0;
+        color: #dc3d3d;
+    }
+    .estado-pill.estado-sensor-sin_datos {
+        background: #fef9e7;
+        color: #d97706;
+    }
+</style>
+
+<script>
+    function selectStation(element) {
+        // Remover clase 'selected' de todas las tarjetas
+        document.querySelectorAll('.sensor-card').forEach(card => {
+            card.classList.remove('selected');
+        });
+        // Agregar clase 'selected' a la tarjeta clickeada
+        element.classList.add('selected');
+
+        // Obtener los datos de la estación desde el atributo data-station
+        let stationData;
+        try {
+            stationData = JSON.parse(element.dataset.station);
+        } catch (e) {
+            console.error('Error al parsear datos de la estación', e);
+            return;
+        }
+
+        // Actualizar nombre de la estación seleccionada
+        const nameSpan = document.getElementById('selectedStationName');
+        if (nameSpan) {
+            nameSpan.textContent = '— ' + (stationData.nombre || 'Sin nombre');
+        }
+
+        // --- ESP32 (Estado de la estación) ---
+        const esp32Status = document.getElementById('status-esp32');
+        const estadoNombre = stationData.estado_nombre || 'SIN_DATOS';
+        esp32Status.textContent = estadoNombre;
+        esp32Status.className = 'estado-pill estado-' + estadoNombre.toLowerCase();
+
+        // --- DHT22 ---
+        const dhtStatus = document.getElementById('status-dht');
+        const dhtEstado = stationData.dht_estado || 'SIN_DATOS';
+        dhtStatus.textContent = dhtEstado;
+        dhtStatus.className = 'estado-pill estado-sensor-' + dhtEstado.toLowerCase();
+
+        // --- MQ-2 ---
+        const mq2Status = document.getElementById('status-mq2');
+        const mq2Estado = stationData.mq2_estado || 'SIN_DATOS';
+        mq2Status.textContent = mq2Estado;
+        mq2Status.className = 'estado-pill estado-sensor-' + mq2Estado.toLowerCase();
+
+        // También podemos actualizar el estado de los valores en la tarjeta, pero ya están.
+        console.log(`Estación seleccionada: ${stationData.nombre} | ESP32: ${estadoNombre} | DHT22: ${dhtEstado} | MQ-2: ${mq2Estado}`);
+    }
+
+    // Al cargar la página, seleccionar la primera estación automáticamente
+    document.addEventListener('DOMContentLoaded', function() {
+        const firstCard = document.querySelector('.sensor-card');
+        if (firstCard) {
+            selectStation(firstCard);
+        }
+    });
+</script>
 {% endblock %}
