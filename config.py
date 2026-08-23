@@ -6,6 +6,7 @@ load_dotenv()
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     SESSION_TYPE = 'filesystem'
+    SESSION_FILE_THRESHOLD = 100  # límite de archivos
     SESSION_PERMANENT = False
     DB_HOST = os.environ.get('DB_HOST', 'localhost')
     DB_NAME = os.environ.get('DB_NAME', 'forestguard')
