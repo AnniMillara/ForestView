@@ -89,7 +89,6 @@ function updateDashboardWithData(data) {
         let maxColor = '#159447';
         data.forEach(est => {
             if (est.nivel_alerta_activa) {
-                // Podríamos mapear nombres a severidad, pero mejor usamos el color o un orden fijo
                 let severidad = { 'NORMAL': 0, 'RIESGO_MODERADO': 1, 'RIESGO_ALTO': 2, 'ALERTA': 3 }[est.nivel_alerta_activa] || 0;
                 if (severidad > maxSeveridad) {
                     maxSeveridad = severidad;
@@ -181,13 +180,7 @@ function updateMapMarkers(map, data) {
 function updateRecentAlerts(data) {
     const container = document.querySelector('.alerts-list');
     if (!container) return;
-
-    // Obtener alertas activas de la API (ya vienen en data)
-    // Pero la API no devuelve alertas directamente, solo el nivel. 
-    // Para simplificar, usamos los datos de alertas que se pasan desde Flask en el renderizado inicial.
-    // En el dashboard, se renderizan con Jinja, y la actualización periódica no las cambia.
-    // Dejamos que el renderizado inicial las muestre, y no las actualizamos dinámicamente.
-    // Pero podemos recargar la página completa si queremos, o mejor no hacer nada aquí.
+    // Las alertas se renderizan desde Flask, no se actualizan dinámicamente.
 }
 
 
@@ -198,9 +191,7 @@ function updateRecentAlerts(data) {
 function updateDeviceList(data) {
     const container = document.querySelector('.device-list');
     if (!container) return;
-
-    // Similar a las alertas, los dispositivos se renderizan desde Flask con Jinja.
-    // No actualizamos dinámicamente para no perder el diseño.
+    // Similar a las alertas.
 }
 
 
@@ -236,6 +227,11 @@ function initializeDashboardMap() {
     fetchDashboardData().then(data => {
         if (data) updateMapMarkers(dashboardMap, data);
     });
+
+    // Invalidar tamaño al redimensionar la ventana
+    window.addEventListener('resize', () => {
+        if (dashboardMap) dashboardMap.invalidateSize();
+    });
 }
 
 
@@ -270,6 +266,11 @@ function initializeZonesMap() {
     // Cargar datos iniciales
     fetchDashboardData().then(data => {
         if (data) updateMapMarkers(zonesMap, data);
+    });
+
+    // Invalidar tamaño al redimensionar
+    window.addEventListener('resize', () => {
+        if (zonesMap) zonesMap.invalidateSize();
     });
 }
 
@@ -417,8 +418,6 @@ function startPeriodicUpdate() {
         const data = await fetchDashboardData();
         if (data) {
             updateDashboardWithData(data);
-            // También actualizar el gráfico si es necesario (recargar página o hacer fetch específico)
-            // Para simplificar, no actualizamos el gráfico en tiempo real, solo recargamos la página si es necesario.
         }
     }, 15000);
 }
@@ -429,19 +428,6 @@ function startPeriodicUpdate() {
 ========================================================= */
 
 document.addEventListener("DOMContentLoaded", function() {
-
-    // Obtener historico desde la variable de Jinja (se pasa en el renderizado)
-    // Nota: en las plantillas, se inyecta como variable 'historico'
-    // Para que funcione, se debe pasar en el contexto de Flask.
-    // En el dashboard.html, ya se pasa 'historico' como una lista de diccionarios.
-    // Lo tomamos desde una variable global que podemos definir en la plantilla.
-    // Pero como no podemos acceder directamente a Jinja desde JS, lo haremos mediante un script en la plantilla.
-    // En dashboard.html, añadiremos un script que defina window.historicoData.
-    // Por ahora, inicializamos con datos vacíos y luego se actualizará con la API.
-
-    // Inicializar gráfico con datos vacíos (se llenará desde la plantilla)
-    // En la plantilla, se inyecta 'historico' y se llama a initializeEnvironmentChart(historico)
-    // Por eso, dejamos esta función para ser llamada desde la plantilla.
 
     // Inicializar mapas
     initializeDashboardMap();

@@ -2047,580 +2047,121 @@ input {
 
 
 /* =========================================================
-   RESPONSIVE
-========================================================= */
+   MEJORAS DE RESPONSIVIDAD ADICIONALES
+   ========================================================= */
 
-@media (max-width: 1200px) {
-    .stats-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .middle-grid, .bottom-grid {
-        grid-template-columns: 1fr;
-    }
-    .detalle-grid {
-        grid-template-columns: 1fr;
-    }
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-    .sensor-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    .settings-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 850px) {
-    :root {
-        --sidebar-width: 75px;
-    }
-    .sidebar-logo {
-        justify-content: center;
-        padding: 0;
-    }
-    .sidebar-logo>div:last-child {
-        display: none;
-    }
-    .logo-icon {
-        width: 40px;
-        height: 40px;
-    }
-    .menu-title {
-        display: none;
-    }
-    .menu-item {
-        justify-content: center;
-        padding: 0;
-    }
-    .menu-item span:not(.notification-count) {
-        display: none;
-    }
-    .menu-item i {
-        font-size: 17px;
-    }
-    .notification-count {
-        position: absolute;
-        top: 5px;
-        right: 5px;
-        min-width: 15px;
-        height: 15px;
-        font-size: 7px;
-    }
-    .system-status {
-        justify-content: center;
-        padding: 10px 0;
-    }
-    .system-status div {
-        display: none;
-    }
-    .sidebar-user {
-        justify-content: center;
-    }
-    .sidebar-user .user-info,
-    .sidebar-user>a {
-        display: none;
-    }
-    .topbar {
-        padding: 0 25px;
-    }
-    .last-update span,
-    .last-update strong {
-        display: none;
-    }
-    .alerts-summary {
-        grid-template-columns: 1fr;
-    }
-    .sensor-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-}
-
-@media (max-width: 600px) {
-    .main-content {
-        width: calc(100% - 75px);
-    }
-    .topbar {
-        height: 75px;
-    }
-    .page-title h1 {
-        font-size: 19px;
-    }
-    .profile>div:last-child {
-        display: none;
-    }
-    .profile {
-        padding-left: 10px;
-    }
-    .content {
-        padding: 20px 15px 30px;
-    }
-    .welcome {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    .stats-grid,
-    .sensor-grid {
-        grid-template-columns: 1fr;
-    }
-    .panel {
-        padding: 17px;
-    }
-    .chart-container,
-    .map-container {
-        height: 240px;
-    }
-    .real-map {
-        height: 400px;
-        min-height: 400px;
-    }
-    .alert-item {
-        align-items: flex-start;
-    }
-    .alert-status {
-        display: none;
-    }
-    .zones-layout {
-        grid-template-columns: 1fr;
-    }
-    .history-row {
-        font-size: 8px;
-        grid-template-columns: 1fr 1fr 1fr 1fr 1fr 0.6fr;
-    }
-    .tech-video {
-        width: 100%;
-        padding: 15px;
-    }
-    .detalle-grid {
-        grid-template-columns: 1fr;
-    }
-    .info-list {
-        grid-template-columns: 1fr;
-    }
-}
-
+/* Ajustes para el sidebar en móviles muy pequeños */
 @media (max-width: 420px) {
-    :root {
-        --sidebar-width: 60px;
-    }
-    .sidebar {
-        width: 60px;
-    }
-    .main-content {
-        width: calc(100% - 60px);
-        margin-left: 60px;
-    }
-    .logo-icon {
-        width: 36px;
-        height: 36px;
-    }
-    .menu-item {
-        min-height: 43px;
-    }
-    .topbar {
-        padding: 0 15px;
-    }
-    .last-update,
-    .profile {
-        display: none;
-    }
-    .content {
-        padding: 18px 12px 25px;
-    }
-    .real-map {
-        height: 350px;
-        min-height: 350px;
-    }
-}
-
-/* =========================================================
-   SIDEBAR SCROLL OCULTO
-========================================================= */
-.sidebar-menu {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-.sidebar-menu::-webkit-scrollbar {
-    display: none;
-}
-
-/* =========================================================
-   ESTILOS PARA MODAL DE NOTIFICACIONES
-========================================================= */
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 2000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.5);
-}
-.modal-content {
-    background: #ffffff;
-    margin: 80px auto;
-    padding: 0;
-    border-radius: 14px;
-    width: 90%;
-    max-width: 500px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
-    animation: modalFade 0.3s;
-}
-@keyframes modalFade {
-    from { transform: translateY(-30px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid #e5ebe7;
-}
-.modal-header h3 {
-    font-size: 16px;
-    font-weight: 600;
-    color: #17221b;
-}
-.close-modal {
-    font-size: 24px;
-    font-weight: 300;
-    cursor: pointer;
-    color: #718078;
-}
-.close-modal:hover {
-    color: #17221b;
-}
-.modal-body {
-    padding: 16px 20px;
-    max-height: 400px;
-    overflow-y: auto;
-}
-.notificacion-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid #e5ebe7;
-}
-.notificacion-item:last-child {
-    border-bottom: none;
-}
-.notificacion-item i {
-    width: 30px;
-    text-align: center;
-    font-size: 18px;
-    color: #718078;
-}
-.notificacion-item.alerta i { color: #dc3d3d; }
-.notificacion-item.riesgo_alto i { color: #e5a500; }
-.notificacion-item.riesgo_moderado i { color: #f39c12; }
-.notificacion-item div {
-    flex: 1;
-}
-.notificacion-item strong {
-    display: block;
-    font-size: 12px;
-}
-.notificacion-item span {
-    display: block;
-    font-size: 10px;
-    color: #718078;
-}
-.notificacion-item small {
-    font-size: 9px;
-    color: #9aa69f;
-}
-.notificacion-item .estado-pill {
-    font-size: 8px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: #eaf8ef;
-    color: #159447;
-}
-.notificacion-item .estado-pill.alerta {
-    background: #fff0f0;
-    color: #dc3d3d;
-}
-.notificacion-item .estado-pill.riesgo_alto {
-    background: #fff7df;
-    color: #e5a500;
-}
-.notificacion-item .estado-pill.riesgo_moderado {
-    background: #fef9e7;
-    color: #d97706;
-}
-
-.empty-notifications {
-    color: #718078;
-    text-align: center;
-    padding: 20px 0;
-}
-
-/* =========================================================
-   HELP PAGE
-========================================================= */
-.help-content {
-    max-width: 900px;
-    margin: 0 auto;
-}
-.help-section {
-    background: #ffffff;
-    border-radius: 12px;
-    padding: 25px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-.help-section h2 {
-    color: #0b4d26;
-    border-bottom: 2px solid #e5ebe7;
-    padding-bottom: 10px;
+  .sidebar {
+    width: 60px;
+  }
+  .menu-item {
+    min-height: 48px;
+    padding: 0 8px;
+  }
+  .menu-item i {
     font-size: 20px;
-}
-.help-section p, .help-section li {
-    color: #17221b;
-    line-height: 1.8;
-}
-.help-section code {
-    background: #f4f6f5;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.85em;
-    color: #d63384;
-}
-.help-section ol, .help-section ul {
-    padding-left: 20px;
-}
-
-/* =========================================================
-   MEJORAS VISUALES
-========================================================= */
-.estado-pill.estado-offline {
-    background: #f3f4f6;
-    color: #6b7280;
-}
-.estado-pill.estado-online {
-    background: #eaf8ef;
-    color: #159447;
-}
-.estado-pill.estado-error {
-    background: #fff0f0;
-    color: #dc3d3d;
-}
-.estado-pill.estado-pendiente {
-    background: #fef9e7;
-    color: #d97706;
-}
-
-/* =========================================================
-   ESTADOS DE SENSORES Y COMPONENTES
-========================================================= */
-.estado-pill {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 20px;
+  }
+  .menu-item .notification-count {
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 8px;
+  }
+  .sidebar-user {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .user-avatar {
+    width: 28px;
+    height: 28px;
     font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    background: #f3f4f6;
-    color: #6b7280;
+  }
+  .sidebar-user > a {
+    font-size: 16px;
+  }
 }
 
-.estado-pill.estado-online,
-.estado-pill.activo,
-.estado-pill.estado-sensor-activo {
-    background: #eaf8ef;
-    color: #159447;
+/* Mejor legibilidad de textos en móviles */
+@media (max-width: 600px) {
+  .stat-value strong {
+    font-size: 24px;
+  }
+  .stat-title {
+    font-size: 9px;
+  }
+  .stat-footer {
+    font-size: 7px;
+  }
+  .panel-header h3 {
+    font-size: 13px;
+  }
+  .alert-info strong {
+    font-size: 9px;
+  }
+  .alert-info span {
+    font-size: 7px;
+  }
+  .device-info strong {
+    font-size: 9px;
+  }
+  .zone-item strong {
+    font-size: 9px;
+  }
+  .zone-item small {
+    font-size: 7px;
+  }
 }
 
-.estado-pill.estado-offline,
-.estado-pill.inactivo {
-    background: #f3f4f6;
-    color: #6b7280;
+/* Tablas: ocultar columnas secundarias en móviles */
+@media (max-width: 600px) {
+  .table th:nth-child(3),
+  .table td:nth-child(3),  /* Código */
+  .table th:nth-child(6),
+  .table td:nth-child(6),  /* IP */
+  .table th:nth-child(7),
+  .table td:nth-child(7) { /* Última conexión */
+    display: none;
+  }
+  .history-row {
+    grid-template-columns: 1fr 1fr 1fr 1fr 0.6fr; /* Oculta riesgo */
+  }
+  .history-row .risk-high,
+  .history-row .risk-medium,
+  .history-row .risk-low {
+    font-size: 8px;
+  }
 }
 
-.estado-pill.estado-error,
-.estado-pill.error,
-.estado-pill.estado-sensor-error {
-    background: #fff0f0;
-    color: #dc3d3d;
+/* Mapas y gráficos: altura adaptativa */
+@media (max-width: 850px) {
+  .map-container,
+  .real-map {
+    height: 40vh;
+    min-height: 250px;
+  }
+  .chart-container {
+    height: 250px;
+  }
 }
 
-.estado-pill.estado-sin_datos,
-.estado-pill.sin_datos,
-.estado-pill.estado-sensor-sin_datos {
-    background: #fef9e7;
-    color: #d97706;
+/* Formularios: ancho máximo en tablets */
+@media (min-width: 600px) and (max-width: 1024px) {
+  .login-container,
+  .form-grid {
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
-.estado-pill.estado-pendiente {
-    background: #fef9e7;
-    color: #d97706;
+/* Mejor espaciado en componentes hardware */
+.component {
+  padding: 12px 10px;
+  gap: 8px;
 }
-
-/* Tarjetas de sensores clickeables */
-.sensor-card {
-    cursor: pointer;
-    transition: 0.2s ease;
-}
-
-.sensor-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-}
-
-.sensor-card.selected {
-    border: 2px solid #0b4d26;
-    box-shadow: 0 0 0 4px rgba(11, 77, 38, 0.15);
-}
-
-/* Estilos para los estados de los componentes en la sección HARDWARE */
 .component .estado-pill {
-    font-size: 10px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-/* =========================================================
-   ESTADOS DE SENSORES Y COMPONENTES
-========================================================= */
-.estado-pill {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    background: #f3f4f6;
-    color: #6b7280;
-}
-
-.estado-pill.estado-online,
-.estado-pill.activo,
-.estado-pill.estado-sensor-activo {
-    background: #eaf8ef;
-    color: #159447;
-}
-
-.estado-pill.estado-offline,
-.estado-pill.inactivo {
-    background: #f3f4f6;
-    color: #6b7280;
-}
-
-.estado-pill.estado-error,
-.estado-pill.error,
-.estado-pill.estado-sensor-error {
-    background: #fff0f0;
-    color: #dc3d3d;
-}
-
-.estado-pill.estado-sin_datos,
-.estado-pill.sin_datos,
-.estado-pill.estado-sensor-sin_datos {
-    background: #fef9e7;
-    color: #d97706;
-}
-
-.estado-pill.estado-pendiente {
-    background: #fef9e7;
-    color: #d97706;
-}
-
-/* Tarjetas de sensores clickeables */
-.sensor-card {
-    cursor: pointer;
-    transition: 0.2s ease;
-}
-
-.sensor-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-}
-
-.sensor-card.selected {
-    border: 2px solid #0b4d26;
-    box-shadow: 0 0 0 4px rgba(11, 77, 38, 0.15);
-}
-
-/* Estilos para los estados de los componentes en la sección HARDWARE */
-.component .estado-pill {
-    font-size: 10px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-/* =========================================================
-   ESTADOS DE SENSORES Y COMPONENTES
-========================================================= */
-.estado-pill {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    background: #f3f4f6;
-    color: #6b7280;
-}
-
-.estado-pill.estado-online,
-.estado-pill.activo,
-.estado-pill.estado-sensor-activo {
-    background: #eaf8ef;
-    color: #159447;
-}
-
-.estado-pill.estado-offline,
-.estado-pill.inactivo {
-    background: #f3f4f6;
-    color: #6b7280;
-}
-
-.estado-pill.estado-error,
-.estado-pill.error,
-.estado-pill.estado-sensor-error {
-    background: #fff0f0;
-    color: #dc3d3d;
-}
-
-.estado-pill.estado-sin_datos,
-.estado-pill.sin_datos,
-.estado-pill.estado-sensor-sin_datos {
-    background: #fef9e7;
-    color: #d97706;
-}
-
-.estado-pill.estado-pendiente {
-    background: #fef9e7;
-    color: #d97706;
-}
-
-.sensor-card {
-    cursor: pointer;
-    transition: 0.2s ease;
-}
-
-.sensor-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-}
-
-.sensor-card.selected {
-    border: 2px solid #0b4d26;
-    box-shadow: 0 0 0 4px rgba(11, 77, 38, 0.15);
-}
-
-.component .estado-pill {
-    font-size: 10px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    text-transform: uppercase;
+  font-size: 9px;
+  padding: 3px 8px;
 }
