@@ -19,7 +19,7 @@
                 <h3>Preferencias</h3>
             </div>
         </div>
-        <form method="POST">
+        <form method="POST" id="configForm">
             <label class="toggle-setting">
                 <div>
                     <strong>Notificaciones</strong>
@@ -36,8 +36,25 @@
                 <input type="checkbox" name="auto_update" {% if config.auto_update %}checked{% endif %}>
                 <span class="toggle"></span>
             </label>
-            <button type="submit" style="margin-top:16px; padding:10px 20px; background:#062b16; color:#fff; border:none; border-radius:8px; cursor:pointer;">Guardar preferencias</button>
+            <label class="toggle-setting">
+                <div>
+                    <strong>Ubicación</strong>
+                    <small>Compartir ubicación para alertas por cercanía</small>
+                </div>
+                <input type="checkbox" name="ubicacion" {% if config.ubicacion %}checked{% endif %}>
+                <span class="toggle"></span>
+            </label>
+            <button type="submit" class="btn" style="margin-top:16px;">Guardar preferencias</button>
         </form>
     </div>
 </div>
+
+<script>
+    document.getElementById('configForm').addEventListener('submit', function() {
+        const ubicacionCheck = document.querySelector('input[name="ubicacion"]');
+        if (ubicacionCheck && window.setUbicacion) {
+            window.setUbicacion(ubicacionCheck.checked);
+        }
+    });
+</script>
 {% endblock %}

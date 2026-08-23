@@ -21,11 +21,147 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 
-    <!-- ForestGuard CSS (nuevo estilo) -->
+    <!-- ForestGuard CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Estilos adicionales -->
+    <style>
+        /* Modal de notificaciones */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background: #ffffff;
+            margin: 80px auto;
+            padding: 0;
+            border-radius: 14px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+            animation: modalFade 0.3s;
+        }
+        @keyframes modalFade {
+            from { transform: translateY(-30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #e5ebe7;
+        }
+        .modal-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #17221b;
+        }
+        .close-modal {
+            font-size: 24px;
+            font-weight: 300;
+            cursor: pointer;
+            color: #718078;
+        }
+        .close-modal:hover {
+            color: #17221b;
+        }
+        .modal-body {
+            padding: 16px 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .notificacion-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5ebe7;
+        }
+        .notificacion-item:last-child {
+            border-bottom: none;
+        }
+        .notificacion-item i {
+            width: 30px;
+            text-align: center;
+            font-size: 18px;
+            color: #718078;
+        }
+        .notificacion-item.alerta i { color: #dc3d3d; }
+        .notificacion-item.riesgo_alto i { color: #e5a500; }
+        .notificacion-item.riesgo_moderado i { color: #f39c12; }
+        .notificacion-item div {
+            flex: 1;
+        }
+        .notificacion-item strong {
+            display: block;
+            font-size: 12px;
+        }
+        .notificacion-item span {
+            display: block;
+            font-size: 10px;
+            color: #718078;
+        }
+        .notificacion-item small {
+            font-size: 9px;
+            color: #9aa69f;
+        }
+        .notificacion-item .estado-pill {
+            font-size: 8px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: #eaf8ef;
+            color: #159447;
+        }
+        .notificacion-item .estado-pill.alerta {
+            background: #fff0f0;
+            color: #dc3d3d;
+        }
+        .notificacion-item .estado-pill.riesgo_alto {
+            background: #fff7df;
+            color: #e5a500;
+        }
+        .notificacion-item .estado-pill.riesgo_moderado {
+            background: #fef9e7;
+            color: #d97706;
+        }
+
+        /* Ocultar scroll del sidebar */
+        .sidebar-menu {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .sidebar-menu::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Notificación vacía */
+        .empty-notifications {
+            color: #718078;
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        /* Ajustes para estaciones */
+        .estado-pill.estado-offline {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+        .estado-pill.estado-online {
+            background: #eaf8ef;
+            color: #159447;
+        }
+    </style>
 </head>
 
 <body>
@@ -67,7 +203,7 @@
                     <i class="fa-solid fa-triangle-exclamation"></i>
                     <span>Alertas</span>
                     {% if alertas_activas_count > 0 %}
-                    <span class="notification-count">{{ alertas_activas_count }}</span>
+                    <span class="notification-count" id="sidebarAlertCount">{{ alertas_activas_count }}</span>
                     {% endif %}
                 </a>
 
@@ -172,10 +308,11 @@
                         <strong id="lastUpdate">{{ now.strftime('%H:%M:%S') if now else '--:--' }}</strong>
                     </div>
 
-                    <button class="icon-button" title="Notificaciones">
+                    <!-- Botón campana -->
+                    <button class="icon-button" title="Notificaciones" id="notificationBell">
                         <i class="fa-regular fa-bell"></i>
                         {% if alertas_activas_count > 0 %}
-                        <span class="alert-dot"></span>
+                        <span class="alert-dot" id="alertDot"></span>
                         {% endif %}
                     </button>
 
@@ -210,36 +347,58 @@
 
     </div>
 
+    <!-- Modal de notificaciones -->
+    <div id="notificationModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell"></i> Notificaciones</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body" id="notificationList">
+                <p class="empty-notifications">Cargando alertas...</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-    <!-- ForestGuard JS (dashboard) -->
+    <!-- ForestGuard JS -->
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 
     <!-- ========================================================= -->
-    <!--            SCRIPT DE NOTIFICACIONES (global)              -->
+    <!--            SCRIPT DE NOTIFICACIONES Y ALERTAS             -->
     <!-- ========================================================= -->
     <script>
         (function () {
-            // Variables de control
             let notificadas = new Set();
-            let permisosPedidos = false;
+            let ubicacionActiva = true;
+            let modalAbierto = false;
 
-            // Configuración
-            const INTERVALO = 15000; // 15 segundos
+            // Recuperar preferencia de ubicación de sessionStorage
+            try {
+                const ubicacionPref = sessionStorage.getItem('ubicacion');
+                if (ubicacionPref !== null) {
+                    ubicacionActiva = ubicacionPref === 'true';
+                }
+            } catch (e) {}
 
-            // ========== SOLICITAR PERMISO PARA NOTIFICACIONES ==========
+            window.setUbicacion = function(estado) {
+                ubicacionActiva = estado;
+                sessionStorage.setItem('ubicacion', estado);
+            };
+
+            const INTERVALO = 15000;
+
             function pedirPermisoNotificaciones() {
                 if (!('Notification' in window)) return;
                 if (Notification.permission === 'default') {
                     Notification.requestPermission();
                 }
-                permisosPedidos = true;
             }
 
-            // ========== OBTENER UBICACIÓN Y ENVIAR AL SERVIDOR ==========
             function enviarUbicacion() {
-                if (!navigator.geolocation) return;
+                if (!ubicacionActiva || !navigator.geolocation) return;
                 navigator.geolocation.getCurrentPosition(
                     function (pos) {
                         fetch('/api/set_location', {
@@ -252,14 +411,12 @@
                         }).catch(e => console.warn('Error al enviar ubicación', e));
                     },
                     function (err) {
-                        // Usuario denegó o error: no hacer nada
                         console.warn('Geolocalización no disponible', err.message);
                     },
                     { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
                 );
             }
 
-            // ========== REPRODUCIR SONIDO DE ALARMA (Web Audio) ==========
             function reproducirAlarma() {
                 try {
                     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -275,19 +432,15 @@
                         osc.stop();
                         ctx.close();
                     }, 500);
-                } catch (e) {
-                    // Silenciosamente ignorar si no soporta Web Audio
-                }
+                } catch (e) {}
             }
 
-            // ========== VIBRAR ==========
             function vibrarDispositivo() {
                 if (navigator.vibrate) {
                     navigator.vibrate([200, 100, 200, 100, 500]);
                 }
             }
 
-            // ========== MOSTRAR NOTIFICACIÓN DEL NAVEGADOR ==========
             function mostrarNotificacion(titulo, cuerpo, idAlerta) {
                 if (!('Notification' in window) || Notification.permission !== 'granted') {
                     console.log(`[ALERTA] ${titulo}: ${cuerpo}`);
@@ -307,56 +460,139 @@
                 setTimeout(() => notif.close(), 10000);
             }
 
-            // ========== PROCESAR ALERTAS ACTIVAS ==========
             function procesarAlertas(alertas) {
-                alertas.forEach(alerta => {
-                    const id = alerta.id_alerta;
-                    if (notificadas.has(id)) return;
-
-                    const esCritica = (alerta.nivel === 'ALERTA');
-                    const cerca = alerta.cerca === true;
-
-                    const activarAlarma = esCritica && cerca;
-
-                    let mensaje = `${alerta.estacion}: ${alerta.descripcion}`;
-                    if (alerta.distancia_km !== null) {
-                        mensaje += ` (${alerta.distancia_km} km)`;
+                const lista = document.getElementById('notificationList');
+                if (lista) {
+                    if (!alertas || alertas.length === 0) {
+                        lista.innerHTML = '<p class="empty-notifications">No hay alertas activas.</p>';
+                    } else {
+                        let html = '';
+                        alertas.forEach(a => {
+                            const icono = a.nivel === 'ALERTA' ? 'fa-fire' :
+                                         (a.nivel === 'RIESGO_ALTO' ? 'fa-temperature-high' : 'fa-circle-exclamation');
+                            const nivelClass = a.nivel.toLowerCase().replace('_', '');
+                            html += `
+                                <div class="notificacion-item ${nivelClass}">
+                                    <i class="fa-solid ${icono}"></i>
+                                    <div>
+                                        <strong>${a.titulo || 'Alerta'}</strong>
+                                        <span>${a.estacion || 'Estación desconocida'}${a.distancia_km !== null ? ' - '+a.distancia_km.toFixed(1)+' km' : ''}</span>
+                                        <small>${a.fecha_creacion ? new Date(a.fecha_creacion).toLocaleString() : ''}</small>
+                                    </div>
+                                    <span class="estado-pill ${nivelClass}">${a.nivel || 'NORMAL'}</span>
+                                </div>
+                            `;
+                        });
+                        lista.innerHTML = html;
                     }
-                    if (activarAlarma) {
-                        mensaje += ' 🚨 ¡ALERTA CRÍTICA CERCA!';
+                }
+
+                // Notificaciones del navegador
+                if (alertas && alertas.length > 0) {
+                    alertas.forEach(alerta => {
+                        const id = alerta.id_alerta;
+                        if (notificadas.has(id)) return;
+
+                        const esCritica = (alerta.nivel === 'ALERTA');
+                        const cerca = alerta.cerca === true;
+                        const activarAlarma = esCritica && cerca;
+
+                        let mensaje = `${alerta.estacion || 'Estación'}: ${alerta.descripcion || 'Alerta activa'}`;
+                        if (alerta.distancia_km !== null) {
+                            mensaje += ` (${alerta.distancia_km.toFixed(1)} km)`;
+                        }
+                        if (activarAlarma) {
+                            mensaje += ' 🚨 ¡ALERTA CRÍTICA CERCA!';
+                        }
+
+                        mostrarNotificacion(
+                            `ForestGuard - ${alerta.nivel}`,
+                            mensaje,
+                            id
+                        );
+
+                        if (activarAlarma) {
+                            vibrarDispositivo();
+                            reproducirAlarma();
+                        }
+
+                        notificadas.add(id);
+                    });
+                }
+
+                // Actualizar contador en sidebar
+                const count = (alertas && alertas.length) || 0;
+                const sidebarCount = document.querySelector('.menu-item[href="/alertas"] .notification-count');
+                if (sidebarCount) {
+                    if (count > 0) {
+                        sidebarCount.textContent = count;
+                        sidebarCount.style.display = 'flex';
+                    } else {
+                        sidebarCount.style.display = 'none';
                     }
-
-                    mostrarNotificacion(
-                        `ForestGuard - ${alerta.nivel}`,
-                        mensaje,
-                        id
-                    );
-
-                    if (activarAlarma) {
-                        vibrarDispositivo();
-                        reproducirAlarma();
-                    }
-
-                    notificadas.add(id);
-                });
+                }
+                // Actualizar punto de la campana
+                const dot = document.getElementById('alertDot');
+                if (dot) {
+                    dot.style.display = count > 0 ? 'block' : 'none';
+                }
             }
 
-            // ========== CONSULTAR ALERTAS ACTIVAS ==========
             function fetchAlertas() {
                 fetch('/api/alertas_activas')
-                    .then(res => res.json())
+                    .then(res => {
+                        if (!res.ok) throw new Error('Error en API');
+                        return res.json();
+                    })
                     .then(data => {
                         procesarAlertas(data);
                     })
                     .catch(err => console.warn('Error al obtener alertas', err));
             }
 
-            // ========== INICIO ==========
             function init() {
                 pedirPermisoNotificaciones();
-                enviarUbicacion();
+                if (ubicacionActiva) {
+                    enviarUbicacion();
+                }
+
+                // Cargar alertas iniciales
                 fetchAlertas();
+
+                // Actualización periódica
                 setInterval(fetchAlertas, INTERVALO);
+
+                // Modal de notificaciones
+                const bell = document.getElementById('notificationBell');
+                const modal = document.getElementById('notificationModal');
+                const closeBtn = document.querySelector('.close-modal');
+
+                if (bell && modal) {
+                    bell.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        modal.style.display = 'block';
+                        modalAbierto = true;
+                        fetchAlertas(); // refrescar al abrir
+                    });
+                    if (closeBtn) {
+                        closeBtn.addEventListener('click', function() {
+                            modal.style.display = 'none';
+                            modalAbierto = false;
+                        });
+                    }
+                    window.addEventListener('click', function(e) {
+                        if (e.target === modal) {
+                            modal.style.display = 'none';
+                            modalAbierto = false;
+                        }
+                    });
+                }
+
+                // Estado del sistema
+                const statusDot = document.querySelector('.status-dot');
+                if (statusDot) {
+                    statusDot.style.background = '#32d766';
+                }
             }
 
             if (document.readyState === 'loading') {
@@ -367,7 +603,6 @@
         })();
     </script>
 
-    <!-- Bloque para scripts adicionales (sin duplicar el bloque extra_scripts) -->
     {% block extra_scripts %}{% endblock %}
 
 </body>

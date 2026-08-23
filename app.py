@@ -15,7 +15,6 @@ import re
 from math import radians, sin, cos, sqrt, atan2
 import socket
 import threading
-import time
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -30,7 +29,6 @@ ESTADO_ALERTA = {'ACTIVA': 1, 'ATENDIDA': 2, 'RESUELTA': 3, 'FALSA': 4}
 ROLES_GESTION_ALERTAS = ('ADMINISTRADOR', 'BOMBERO', 'OPERADOR')
 ROLES_ADMIN = ('ADMINISTRADOR',)
 
-# Coordenadas por defecto para estaciones auto-registradas (ejemplo: Santiago, Chile)
 DEFAULT_LAT = -33.4569
 DEFAULT_LON = -70.6483
 
@@ -66,7 +64,12 @@ gestion_alertas_required = roles_required(*ROLES_GESTION_ALERTAS)
 @app.context_processor
 def inject_alertas_count():
     if 'usuario_id' in session:
-        count = db.get_one("SELECT COUNT(*) as count FROM alertas WHERE id_estado_alerta = %s", (ESTADO_ALERTA['ACTIVA'],))
+        # Solo contar alertas de estaciones activas
+        count = db.get_one("""
+            SELECT COUNT(*) as count FROM alertas a
+            JOIN estaciones e ON a.id_estacion = e.id_estacion
+            WHERE a.id_estado_alerta = %s AND e.activa = 1
+        """, (ESTADO_ALERTA['ACTIVA'],))
         return {'alertas_activas_count': count['count'] if count else 0}
     return {'alertas_activas_count': 0}
 
@@ -74,8 +77,6 @@ def inject_alertas_count():
 # INICIALIZACIÓN
 # =====================================================================
 def init_db():
-    """Crea usuario admin, usuarios de prueba y ajusta tablas."""
-    # Admin
     admin = db.get_one("SELECT id_usuario FROM usuarios WHERE nombre_usuario = %s", ('admin',))
     if not admin:
         hash_pass = generate_password_hash('admin123')
@@ -85,7 +86,6 @@ def init_db():
         """, ('admin', hash_pass, 'admin@forestguard.com', 'Administrador', 1))
         print("Usuario admin creado (admin / admin123)")
 
-    # Usuarios de prueba
     prueba = [
         ('bombero', 'bombero123', 'bombero@forestguard.com', 'Bombero Test', 2),
         ('operador', 'operador123', 'operador@forestguard.com', 'Operador Test', 3),
@@ -100,19 +100,16 @@ def init_db():
             """, (user, hash_pass, email, nombre, tipo))
             print(f"Usuario {user} creado ({user} / {pwd})")
 
-    # Asegurar que latitud y longitud acepten NULL
     try:
         db.execute_query("ALTER TABLE estaciones MODIFY latitud DECIMAL(10,8) NULL")
         db.execute_query("ALTER TABLE estaciones MODIFY longitud DECIMAL(11,8) NULL")
-        print("✅ Tabla estaciones actualizada: latitud y longitud aceptan NULL")
+        print("✅ Tabla estaciones actualizada")
     except Exception as e:
-        print(f"⚠️ No se pudo modificar la tabla (quizás ya está): {e}")
+        print(f"⚠️ No se pudo modificar la tabla: {e}")
 
-    # Verificar que exista la configuración de radio_alerta
     if not db.get_one("SELECT clave FROM configuracion WHERE clave = 'radio_alerta'"):
         db.execute_query("INSERT INTO configuracion (clave, valor, descripcion) VALUES ('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria')")
 
-    # Agregar estados de estación pendiente y rechazada si no existen
     for nombre, desc in [('PENDIENTE', 'Esperando aprobación'), ('RECHAZADA', 'Registro denegado')]:
         if not db.get_one("SELECT id_estado_estacion FROM estados_estacion WHERE nombre = %s", (nombre,)):
             db.execute_query("INSERT INTO estados_estacion (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
@@ -134,11 +131,11 @@ def obtener_umbrales(id_estacion=None):
 def clasificar_humo(cambio_ao, umbrales):
     if cambio_ao is None:
         return None, None
-    if cambio_ao >= umbrales['humo_alto']:
+    if cambio_ao >= umbrales.get('humo_alto', 500):
         nivel = 3
-    elif cambio_ao >= umbrales['humo_medio']:
+    elif cambio_ao >= umbrales.get('humo_medio', 300):
         nivel = 2
-    elif cambio_ao >= umbrales['humo_bajo']:
+    elif cambio_ao >= umbrales.get('humo_bajo', 100):
         nivel = 1
     else:
         nivel = 0
@@ -146,33 +143,67 @@ def clasificar_humo(cambio_ao, umbrales):
     return nivel, fila['id_tipo_humo'] if fila else None
 
 def evaluar_riesgo(temp, hum, nivel_humo, umbrales):
-    temp_alta = temp is not None and temp >= umbrales['temp_alta']
-    temp_critica = temp is not None and temp >= umbrales['temp_critica']
-    hum_baja = hum is not None and hum <= umbrales['hum_baja']
-    hum_critica = hum is not None and hum <= umbrales['hum_critica']
-    humo_bajo = nivel_humo == 1
-    humo_medio = nivel_humo == 2
-    humo_alto = nivel_humo == 3
+    temp_riesgo = float(umbrales.get('temp_riesgo', 30.0))
+    temp_alta = float(umbrales.get('temp_alta', 35.0))
+    temp_critica = float(umbrales.get('temp_critica', 40.0))
+    hum_riesgo = float(umbrales.get('hum_riesgo', 45.0))
+    hum_baja = float(umbrales.get('hum_baja', 30.0))
+    hum_critica = float(umbrales.get('hum_critica', 15.0))
 
-    condiciones = []
-    if temp_alta: condiciones.append('TEMPERATURA_ALTA')
-    if temp_critica: condiciones.append('TEMPERATURA_CRITICA')
-    if hum_baja: condiciones.append('HUMEDAD_BAJA')
-    if hum_critica: condiciones.append('HUMEDAD_CRITICA')
-    if humo_bajo: condiciones.append('HUMO_BAJO')
-    if humo_medio: condiciones.append('HUMO_MEDIO')
-    if humo_alto: condiciones.append('HUMO_ALTO')
+    tempRiesgo = temp is not None and temp >= temp_riesgo
+    tempAlta = temp is not None and temp >= temp_alta
+    tempCritica = temp is not None and temp >= temp_critica
+    humRiesgo = hum is not None and hum <= hum_riesgo
+    humBaja = hum is not None and hum <= hum_baja
+    humCritica = hum is not None and hum <= hum_critica
 
-    if (humo_alto or (humo_medio and temp_alta) or (humo_medio and hum_baja) or
-        (humo_bajo and temp_critica) or (humo_bajo and hum_critica) or
-        (temp_critica and hum_baja)):
-        return 'ALERTA', 'POSIBLE_INCENDIO', condiciones
-    if (humo_medio or (humo_bajo and temp_alta) or (humo_bajo and hum_baja) or
-        (temp_alta and hum_baja)):
-        return 'RIESGO_ALTO', 'RIESGO_ALTO', condiciones
-    if temp_alta or hum_baja or humo_bajo:
-        return 'RIESGO_MODERADO', 'RIESGO_MODERADO', condiciones
-    return 'NORMAL', None, condiciones
+    alertaMaxima = False
+    riesgoAlto = False
+    riesgoModerado = False
+
+    # ALERTA MÁXIMA
+    if nivel_humo == 3:
+        alertaMaxima = True
+    elif nivel_humo == 2 and tempAlta:
+        alertaMaxima = True
+    elif nivel_humo == 2 and humBaja:
+        alertaMaxima = True
+    elif nivel_humo == 1 and tempCritica:
+        alertaMaxima = True
+    elif nivel_humo == 1 and humCritica:
+        alertaMaxima = True
+    elif tempCritica and humBaja:
+        alertaMaxima = True
+    elif nivel_humo >= 1 and tempAlta and humBaja:
+        alertaMaxima = True
+
+    # RIESGO ALTO
+    if not alertaMaxima:
+        if nivel_humo == 2:
+            riesgoAlto = True
+        elif nivel_humo == 1 and tempAlta:
+            riesgoAlto = True
+        elif nivel_humo == 1 and humBaja:
+            riesgoAlto = True
+        elif tempAlta and humBaja:
+            riesgoAlto = True
+
+    # RIESGO MODERADO
+    if not alertaMaxima and not riesgoAlto:
+        if nivel_humo == 1:
+            riesgoModerado = True
+        elif tempRiesgo:
+            riesgoModerado = True
+        elif humRiesgo:
+            riesgoModerado = True
+
+    if alertaMaxima:
+        return 'ALERTA', 'POSIBLE_INCENDIO', []
+    elif riesgoAlto:
+        return 'RIESGO_ALTO', 'RIESGO_ALTO', []
+    elif riesgoModerado:
+        return 'RIESGO_MODERADO', 'RIESGO_MODERADO', []
+    return 'NORMAL', None, []
 
 def registrar_evento(tipo, id_estacion=None, id_usuario=None, mensaje='', datos=None):
     fila = db.get_one("SELECT id_tipo_evento FROM tipos_evento WHERE nombre = %s", (tipo,))
@@ -233,6 +264,13 @@ def verificar_estaciones_offline():
                     est['id_estacion'], 'ESTACION_OFFLINE', 'RIESGO_MODERADO',
                     'Estación desconectada', 'La estación dejó de reportar datos'
                 )
+        # Si está ONLINE y tiene alerta de OFFLINE, resolverla
+        elif est['id_estado_estacion'] == ESTADO_ESTACION['ONLINE']:
+            db.execute_query("""
+                UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
+                WHERE id_estacion = %s AND id_estado_alerta = %s
+                AND id_tipo_alerta = (SELECT id_tipo_alerta FROM tipos_alerta WHERE nombre = 'ESTACION_OFFLINE')
+            """, (ESTADO_ALERTA['RESUELTA'], est['id_estacion'], ESTADO_ALERTA['ACTIVA']))
 
 def obtener_estacion_con_ultima_medicion(id_estacion):
     return db.get_one("""
@@ -323,7 +361,6 @@ def logout():
 @login_required
 def dashboard():
     verificar_estaciones_offline()
-    # ÚLTIMA MEDICIÓN: solo de estaciones activas
     ultima_medicion = db.get_one("""
         SELECT m.*, e.nombre as estacion, th.nombre as humo_nombre
         FROM mediciones m
@@ -336,7 +373,8 @@ def dashboard():
         SELECT nr.nombre, nr.color_hex
         FROM alertas a
         JOIN niveles_riesgo nr ON a.id_nivel_riesgo = nr.id_nivel_riesgo
-        WHERE a.id_estado_alerta = 1
+        JOIN estaciones e ON a.id_estacion = e.id_estacion
+        WHERE a.id_estado_alerta = 1 AND e.activa = 1
         ORDER BY nr.severidad DESC LIMIT 1
     """)
     rango = request.args.get('rango', '24h')
@@ -372,7 +410,7 @@ def dashboard():
         JOIN estaciones e ON a.id_estacion = e.id_estacion
         JOIN tipos_alerta ta ON a.id_tipo_alerta = ta.id_tipo_alerta
         JOIN niveles_riesgo nr ON a.id_nivel_riesgo = nr.id_nivel_riesgo
-        WHERE a.id_estado_alerta = %s
+        WHERE a.id_estado_alerta = %s AND e.activa = 1
         ORDER BY nr.severidad DESC, a.fecha_creacion DESC
     """, (ESTADO_ALERTA['ACTIVA'],))
     return render_template('dashboard.html',
@@ -416,7 +454,7 @@ def zonas():
     )
 
 # =====================================================================
-# GESTIÓN DE ESTACIONES (CRUD) + PENDIENTES
+# GESTIÓN DE ESTACIONES
 # =====================================================================
 @app.route('/estaciones')
 @login_required
@@ -467,7 +505,6 @@ def aprobar_estacion(id_estacion):
     if not est:
         flash('Estación no encontrada', 'danger')
         return redirect(url_for('pendientes'))
-    # Cambiar a ONLINE y activa=1, PERO CONSERVAR LA API KEY EXISTENTE
     db.execute_query("""
         UPDATE estaciones SET activa = 1, id_estado_estacion = %s
         WHERE id_estacion = %s
@@ -498,8 +535,13 @@ def desconectar_estacion(id_estacion):
     if est:
         db.execute_query("UPDATE estaciones SET activa = 0, id_estado_estacion = %s WHERE id_estacion = %s",
                          (ESTADO_ESTACION['OFFLINE'], id_estacion))
-        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} desconectada")
-        flash('Estación desconectada', 'info')
+        # Resolver alertas activas de esta estación
+        db.execute_query("""
+            UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
+            WHERE id_estacion = %s AND id_estado_alerta = %s
+        """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
+        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} desconectada y alertas resueltas")
+        flash('Estación desconectada y alertas resueltas', 'info')
     else:
         flash('Estación no encontrada', 'danger')
     return redirect(url_for('listar_estaciones'))
@@ -609,9 +651,15 @@ def editar_estacion(id_estacion):
 def eliminar_estacion(id_estacion):
     estacion = db.get_one("SELECT nombre FROM estaciones WHERE id_estacion = %s", (id_estacion,))
     if estacion:
+        # Resolver TODAS las alertas activas de esta estación
+        db.execute_query("""
+            UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
+            WHERE id_estacion = %s AND id_estado_alerta = %s
+        """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
+        # Luego desactivar la estación
         db.execute_query("UPDATE estaciones SET activa = 0 WHERE id_estacion = %s", (id_estacion,))
-        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {estacion['nombre']} eliminada (desactivada)")
-        flash('Estación desactivada. Ya no aparecerá en el sistema.', 'success')
+        registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {estacion['nombre']} eliminada y alertas resueltas")
+        flash('Estación desactivada y sus alertas resueltas.', 'success')
     else:
         flash('Estación no encontrada', 'danger')
     return redirect(url_for('listar_estaciones'))
@@ -884,11 +932,13 @@ def configuracion():
     if request.method == 'POST':
         session['notificaciones'] = 'notificaciones' in request.form
         session['auto_update'] = 'auto_update' in request.form
+        session['ubicacion'] = 'ubicacion' in request.form
         registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje='Preferencias actualizadas')
         flash('Preferencias actualizadas', 'success')
     config = {
         'notificaciones': session.get('notificaciones', True),
-        'auto_update': session.get('auto_update', True)
+        'auto_update': session.get('auto_update', True),
+        'ubicacion': session.get('ubicacion', True)
     }
     return render_template('configuracion.html',
         page="configuracion",
@@ -1061,7 +1111,7 @@ def admin():
     )
 
 # =====================================================================
-# API - INGESTA DE DATOS DE LA ESP32 (CON AUTO-REGISTRO MEJORADO)
+# API - INGESTA DE DATOS DE LA ESP32
 # =====================================================================
 @app.route('/api/estaciones/<codigo>/datos', methods=['POST'])
 def api_recibir_datos(codigo):
@@ -1071,41 +1121,31 @@ def api_recibir_datos(codigo):
     if 'api_key' not in data:
         return jsonify({'error': 'Falta api_key'}), 400
 
-    # Buscar la estación por código
     estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
 
-    # AUTO-REGISTRO MEJORADO: si no existe, crearla en estado PENDIENTE
     if not estacion:
         try:
-            # Insertar con coordenadas por defecto
             db.execute_query("""
                 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
                 VALUES (%s, %s, %s, NULL, %s, %s, %s, 0, %s)
             """, (f"Auto-{codigo}", codigo, data['api_key'], DEFAULT_LAT, DEFAULT_LON,
                   "Estación registrada automáticamente - pendiente de aprobación", ESTADO_ESTACION['PENDIENTE']))
-
-            # Volver a buscar la estación recién creada
             estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
             if not estacion:
                 return jsonify({'error': 'No se pudo recuperar la estación registrada'}), 500
-
             print(f"✅ Estación registrada automáticamente (pendiente): {codigo} con API key {data['api_key']}")
             registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'],
                             mensaje=f"Estación auto-registrada {codigo} (pendiente)")
-
         except Exception as e:
             print(f"❌ Error al registrar estación automáticamente: {e}")
             return jsonify({'error': f'Error al registrar estación: {str(e)}'}), 500
 
-    # Si después del intento sigue sin existir, error
     if not estacion:
-        return jsonify({'error': 'Estación no registrada y no se pudo auto-registrar'}), 404
+        return jsonify({'error': 'Estación no registrada'}), 404
 
-    # Verificar API key
     if estacion['api_key'] != data['api_key']:
         return jsonify({'error': 'api_key inválida'}), 401
 
-    # Verificar que la estación esté activa (aprobada)
     if not estacion['activa']:
         return jsonify({'error': 'Estación pendiente de aprobación. Contacte al administrador.'}), 403
 
@@ -1124,7 +1164,6 @@ def api_recibir_datos(codigo):
 
     umbrales = obtener_umbrales(id_estacion)
 
-    # Usar el nivel_humo enviado por la ESP32 (prioridad total)
     nivel_humo_enviado = data.get('nivel_humo')
     if nivel_humo_enviado is not None:
         id_tipo_humo = mapear_nivel_humo_a_id(nivel_humo_enviado)
@@ -1274,7 +1313,7 @@ def api_set_location():
         return jsonify({'error': 'Lat/Lon inválidos'}), 400
 
 # =====================================================================
-# NUEVA API: OBTENER ALERTAS ACTIVAS CON DISTANCIA
+# NUEVA API: OBTENER ALERTAS ACTIVAS CON DISTANCIA (SOLO ESTACIONES ACTIVAS)
 # =====================================================================
 @app.route('/api/alertas_activas')
 @login_required
@@ -1308,7 +1347,7 @@ def api_alertas_activas():
     return jsonify(result)
 
 # =====================================================================
-# NUEVA RUTA: DESCUBRIMIENTO DEL SERVIDOR (UDP broadcast)
+# NUEVA RUTA: DESCUBRIMIENTO DEL SERVIDOR
 # =====================================================================
 @app.route('/api/discover', methods=['GET'])
 def discover():
