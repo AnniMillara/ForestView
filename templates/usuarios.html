@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Usuarios{% endblock %}
+{% block page_title %}Gestión de Usuarios{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>ADMINISTRACIÓN</span>
+    <h2>Usuarios del sistema</h2>
+    <p>Administra los perfiles y roles de los usuarios ForestGuard.</p>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div>
+            <span class="panel-label">LISTA</span>
+            <h3>Usuarios registrados</h3>
+        </div>
+        <a href="{{ url_for('nuevo_usuario') }}" class="btn"><i class="fas fa-user-plus"></i> Nuevo usuario</a>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Usuario</th>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                    <th>Rol</th>
+                    <th>Estado</th>
+                    <th>Último acceso</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in usuarios %}
+                <tr>
+                    <td><strong>{{ u.nombre_usuario }}</strong></td>
+                    <td>{{ u.nombre_completo }}</td>
+                    <td>{{ u.email }}</td>
+                    <td><span class="badge-rol {{ u.tipo|lower }}">{{ u.tipo }}</span></td>
+                    <td>
+                        <span class="estado-pill 
+                            {% if u.estado == 'ACTIVO' %}estado-online
+                            {% elif u.estado == 'BLOQUEADO' %}estado-error
+                            {% else %}estado-offline{% endif %}">
+                            {{ u.estado }}
+                        </span>
+                    </td>
+                    <td>{{ u.ultimo_acceso or 'Nunca' }}</td>
+                    <td>
+                        <div class="acciones">
+                            <a href="{{ url_for('editar_usuario', id_usuario=u.id_usuario) }}" class="btn btn-sm"><i class="fas fa-pen"></i></a>
+                            {% if u.estado == 'ACTIVO' %}
+                            <form method="POST" action="{{ url_for('cambiar_estado_usuario', id_usuario=u.id_usuario) }}" style="display:inline;">
+                                <input type="hidden" name="estado" value="BLOQUEADO">
+                                <button class="btn btn-sm btn-outline" title="Bloquear"><i class="fas fa-lock"></i></button>
+                            </form>
+                            {% else %}
+                            <form method="POST" action="{{ url_for('cambiar_estado_usuario', id_usuario=u.id_usuario) }}" style="display:inline;">
+                                <input type="hidden" name="estado" value="ACTIVO">
+                                <button class="btn btn-sm" title="Activar"><i class="fas fa-unlock"></i></button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="empty-state">No hay usuarios registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Error {{ codigo }}{% endblock %}
+{% block category %}ERROR{% endblock %}
+{% block page_title %}Error {{ codigo }}{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <h1>{{ codigo }}</h1>
+    <p>{{ mensaje }}</p>
+    <a href="{{ url_for('dashboard') }}" class="btn"><i class="fas fa-house"></i> Volver al dashboard</a>
+</div>
+{% endblock %}

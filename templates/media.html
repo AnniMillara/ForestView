@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Media{% endblock %}
+{% block category %}VIDEO{% endblock %}
+{% block page_title %}Media{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>PRESENTACIÓN FORESTGUARD</span>
+    <h2>Media</h2>
+    <p>Conoce el funcionamiento y la propuesta de ForestGuard.</p>
+</div>
+
+<div class="tech-video">
+    <h3>Conoce parte de ForestGuard</h3>
+    <div class="video-container">
+        <video autoplay muted loop>
+            <source src="{{ url_for('static', filename='video/FORESTGUARD.mp4') }}" type="video/mp4">
+            Tu navegador no soporta la reproducción de videos.
+        </video>
+    </div>
+</div>
+{% endblock %}

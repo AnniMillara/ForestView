@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración{% endblock %}
+{% block category %}SISTEMA{% endblock %}
+{% block page_title %}Configuración{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>SISTEMA</span>
+    <h2>Configuración</h2>
+    <p>Configuración general del sistema ForestGuard.</p>
+</div>
+
+<div class="settings-grid">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">ALERTAS</span>
+                <h3>Umbrales de riesgo</h3>
+            </div>
+        </div>
+        <form method="POST" id="configForm">
+            <div class="setting">
+                <div>
+                    <strong>Temperatura máxima</strong>
+                    <small>Temperatura para activar advertencia</small>
+                </div>
+                <input type="number" name="temp_alta" value="{{ config.temp_alta }}">
+                <span>°C</span>
+            </div>
+            <div class="setting">
+                <div>
+                    <strong>Humedad mínima</strong>
+                    <small>Humedad para activar advertencia</small>
+                </div>
+                <input type="number" name="hum_baja" value="{{ config.hum_baja }}">
+                <span>%</span>
+            </div>
+            <div class="setting">
+                <div>
+                    <strong>Nivel máximo de humo</strong>
+                    <small>Valor para activar alerta</small>
+                </div>
+                <input type="number" name="humo_alto" value="{{ config.humo_alto }}">
+                <span>cambio AO</span>
+            </div>
+            <button type="submit" style="margin-top:16px; padding:10px 20px; background:#062b16; color:#fff; border:none; border-radius:8px; cursor:pointer;">Guardar configuración</button>
+        </form>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">SISTEMA</span>
+                <h3>Preferencias</h3>
+            </div>
+        </div>
+        <form method="POST">
+            <label class="toggle-setting">
+                <div>
+                    <strong>Notificaciones</strong>
+                    <small>Recibir avisos de nuevas alertas</small>
+                </div>
+                <input type="checkbox" name="notifications" {% if config.notifications %}checked{% endif %}>
+                <span class="toggle"></span>
+            </label>
+            <label class="toggle-setting">
+                <div>
+                    <strong>Actualización automática</strong>
+                    <small>Actualizar datos automáticamente</small>
+                </div>
+                <input type="checkbox" name="auto_update" {% if config.auto_update %}checked{% endif %}>
+                <span class="toggle"></span>
+            </label>
+            <button type="submit" style="margin-top:16px; padding:10px 20px; background:#062b16; color:#fff; border:none; border-radius:8px; cursor:pointer;">Guardar preferencias</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

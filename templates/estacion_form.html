@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if estacion else 'Nueva' }} estación{% endblock %}
+{% block page_title %}{{ 'Editar' if estacion else 'Nueva' }} estación{% endblock %}
+{% block content %}
+<form method="POST" class="panel">
+    <div class="form-grid">
+        <div><label>Nombre *</label><input type="text" name="nombre" value="{{ estacion.nombre if estacion else '' }}" required></div>
+        <div><label>Código *</label><input type="text" name="codigo" value="{{ estacion.codigo if estacion else '' }}" required></div>
+        <div><label>Zona</label>
+            <select name="id_zona">
+                <option value="">Sin zona</option>
+                {% for z in zonas %}
+                <option value="{{ z.id_zona }}" {% if estacion and estacion.id_zona == z.id_zona %}selected{% endif %}>{{ z.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div><label>Latitud</label><input type="text" name="latitud" value="{{ estacion.latitud if estacion else '' }}" placeholder="-33.456789"></div>
+        <div><label>Longitud</label><input type="text" name="longitud" value="{{ estacion.longitud if estacion else '' }}" placeholder="-70.123456"></div>
+        <div><label>Descripción</label><textarea name="descripcion" rows="2">{{ estacion.descripcion if estacion else '' }}</textarea></div>
+    </div>
+    <button type="submit" class="btn"><i class="fas fa-save"></i> Guardar</button>
+    <a href="{{ url_for('listar_estaciones') }}" class="btn btn-outline">Cancelar</a>
+</form>
+{% endblock %}

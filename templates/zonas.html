@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Zonas{% endblock %}
+{% block category %}MONITOREO GEOGRÁFICO{% endblock %}
+{% block page_title %}Zonas{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>MONITOREO GEOGRÁFICO</span>
+    <h2>Zonas monitoreadas</h2>
+    <p>Visualiza las estaciones ForestGuard y el nivel de riesgo de cada zona.</p>
+</div>
+
+<div class="zones-layout">
+    <div class="panel zone-map">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">MAPA</span>
+                <h3>Estaciones ForestGuard</h3>
+            </div>
+            <button class="map-button" type="button" aria-label="Expandir mapa" onclick="alert('Función de expandir mapa aún no implementada.')">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+        <div class="real-map">
+            <div id="zonesMap"></div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">ESTACIONES</span>
+                <h3>Estado de las zonas</h3>
+            </div>
+        </div>
+        <div class="zone-list">
+            {% for est in estaciones %}
+            <div class="zone-item">
+                <div class="zone-status {% if est.id_estado_estacion == 1 %}green{% elif est.id_estado_estacion == 2 %}red{% else %}yellow{% endif %}">
+                    <span></span>
+                </div>
+                <div>
+                    <strong>{{ est.nombre }}</strong>
+                    <small>
+                        {% if est.ult_temp is not none %}Temp {{ est.ult_temp }}°C · Hum {{ est.ult_humedad }}%{% else %}Sin datos{% endif %}
+                        {% if est.ult_humo %} · Humo {{ est.ult_humo }}{% endif %}
+                    </small>
+                </div>
+                <b class="{% if est.estado_nombre == 'ONLINE' %}risk-low{% elif est.estado_nombre == 'OFFLINE' %}risk-high{% else %}risk-medium{% endif %}">
+                    {{ est.estado_nombre }}
+                </b>
+            </div>
+            {% else %}
+            <div class="zone-item"><div><strong>No hay estaciones registradas</strong></div></div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

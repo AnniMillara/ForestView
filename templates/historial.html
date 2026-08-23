@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Historial{% endblock %}
+{% block category %}DATOS{% endblock %}
+{% block page_title %}Historial de mediciones{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>DATOS</span>
+    <h2>Historial de mediciones</h2>
+    <p>Consulta la evolución de las variables ambientales.</p>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div>
+            <span class="panel-label">HISTORIAL</span>
+            <h3>Mediciones registradas</h3>
+        </div>
+        <form method="GET" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select name="estacion">
+                <option value="">Todas las estaciones</option>
+                {% for e in estaciones %}
+                <option value="{{ e.id_estacion }}" {% if estacion_seleccionada == e.id_estacion|string %}selected{% endif %}>{{ e.nombre }}</option>
+                {% endfor %}
+            </select>
+            <select name="riesgo">
+                <option value="">Todos los riesgos</option>
+                {% for n in niveles %}
+                <option value="{{ n.nombre }}" {% if riesgo_seleccionado == n.nombre %}selected{% endif %}>{{ n.nombre }}</option>
+                {% endfor %}
+            </select>
+            <input type="date" name="fecha_inicio" value="{{ fecha_inicio }}" placeholder="Desde">
+            <input type="date" name="fecha_fin" value="{{ fecha_fin }}" placeholder="Hasta">
+            <button type="submit" class="btn btn-sm">Filtrar</button>
+        </form>
+    </div>
+
+    <div class="history-table">
+        <div class="history-row history-header">
+            <span>FECHA</span>
+            <span>ZONA</span>
+            <span>TEMPERATURA</span>
+            <span>HUMEDAD</span>
+            <span>HUMO</span>
+            <span>RIESGO</span>
+        </div>
+        {% for m in mediciones %}
+        <div class="history-row">
+            <span>{{ m.fecha_hora }}</span>
+            <span>{{ m.estacion }}</span>
+            <span>{{ m.temperatura if m.temperatura is not none else '—' }} °C</span>
+            <span>{{ m.humedad if m.humedad is not none else '—' }} %</span>
+            <span>{{ m.humo_nombre or '—' }}</span>
+            <span class="{% if m.nivel_riesgo == 'NORMAL' %}risk-low{% elif m.nivel_riesgo == 'RIESGO_MODERADO' %}risk-medium{% else %}risk-high{% endif %}">
+                {{ m.nivel_riesgo or 'NORMAL' }}
+            </span>
+        </div>
+        {% else %}
+        <div class="history-row"><span colspan="6">No hay mediciones registradas.</span></div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Ayuda{% endblock %}
+{% block page_title %}Ayuda de ForestGuard{% endblock %}
+{% block content %}
+<div class="help-content">
+    <h2>¿Qué es ForestGuard?</h2>
+    <p>ForestGuard es un sistema de monitoreo ambiental diseñado para detectar tempranamente condiciones compatibles con incendios forestales. Utiliza estaciones ESP32 equipadas con sensores DHT22 (temperatura y humedad) y MQ-2 (detección de humo/gases).</p>
+
+    <h2>¿Cómo funciona?</h2>
+    <ol>
+        <li>La ESP32 mide temperatura, humedad y humo.</li>
+        <li>Envía los datos por WiFi a la aplicación Flask mediante HTTP POST.</li>
+        <li>Flask valida la estación, guarda la medición en MySQL y evalúa el riesgo combinando las variables.</li>
+        <li>Si se detecta una situación de riesgo, se genera una alerta que aparece en el dashboard.</li>
+        <li>Los usuarios autorizados pueden visualizar, atender y resolver alertas.</li>
+    </ol>
+
+    <h2>Conectar una ESP32</h2>
+    <ol>
+        <li>Configura el firmware <code>ForestGuard_ESP32.ino</code> con tu <strong>SSID</strong>, <strong>contraseña WiFi</strong>, la <strong>IP de tu PC</strong> donde corre Flask y el <strong>código</strong> y <strong>API key</strong> de la estación (regístrala primero en la sección Estaciones).</li>
+        <li>Carga el firmware en la ESP32 con Arduino IDE.</li>
+        <li>La ESP32 comenzará a enviar datos cada 5 segundos. Verifica en el monitor serie que obtiene una IP y que el HTTP devuelve 200 OK.</li>
+        <li>En el dashboard, la estación aparecerá como ONLINE y mostrará los datos.</li>
+    </ol>
+
+    <h2>Interpretación de datos</h2>
+    <ul>
+        <li><strong>Temperatura:</strong> < 30°C Normal, 30-35°C Elevada, ≥35°C Crítica.</li>
+        <li><strong>Humedad:</strong> >45% Normal, 30-45% Baja, ≤30% Crítica.</li>
+        <li><strong>Humo:</strong> NINGUNO, BAJO, MEDIO, ALTO (según cambio del AO respecto a la línea base).</li>
+        <li><strong>Niveles de riesgo:</strong> NORMAL (verde), RIESGO_MODERADO (amarillo), RIESGO_ALTO (naranja), ALERTA (rojo).</li>
+    </ul>
+
+    <h2>Roles y permisos</h2>
+    <ul>
+        <li><strong>ADMINISTRADOR:</strong> Control total: usuarios, estaciones, configuración, alertas.</li>
+        <li><strong>BOMBERO:</strong> Puede atender y resolver alertas, ver todos los datos.</li>
+        <li><strong>OPERADOR:</strong> Monitoreo y gestión de alertas, sin administración de usuarios ni configuración.</li>
+        <li><strong>OBSERVADOR:</strong> Solo visualización de datos, sin acciones operativas.</li>
+    </ul>
+
+    <div class="alert alert-warning">
+        <i class="fas fa-triangle-exclamation"></i>
+        <strong>¡Importante!</strong> Una alerta de ForestGuard <strong>no reemplaza la evaluación profesional</strong> ni autoriza a personas no capacitadas a acercarse a un incendio. Ante una alerta, contacte a los servicios de emergencia oficiales.
+    </div>
+</div>
+{% endblock %}

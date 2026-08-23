@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Alertas{% endblock %}
+{% block category %}SEGURIDAD{% endblock %}
+{% block page_title %}Alertas{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>SEGURIDAD</span>
+    <h2>Centro de alertas</h2>
+    <p>Revisa las condiciones que requieren atención.</p>
+</div>
+
+<div class="alerts-summary">
+    <div class="alert-summary-card">
+        <strong>{{ alertas|selectattr('nivel', 'equalto', 'ALERTA')|list|length }}</strong>
+        <span>Críticas</span>
+    </div>
+    <div class="alert-summary-card">
+        <strong>{{ alertas|selectattr('nivel', 'equalto', 'RIESGO_ALTO')|list|length }}</strong>
+        <span>Advertencias</span>
+    </div>
+    <div class="alert-summary-card">
+        <strong>{{ alertas|selectattr('estado', 'equalto', 'RESUELTA')|list|length }}</strong>
+        <span>Resueltas</span>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div>
+            <span class="panel-label">REGISTRO</span>
+            <h3>Historial de alertas</h3>
+        </div>
+        <div>
+            <select id="filterAlerts" onchange="window.location.href='?filtro='+this.value">
+                <option value="activas" {% if filtro=='activas' %}selected{% endif %}>Activas</option>
+                <option value="todas" {% if filtro=='todas' %}selected{% endif %}>Todas</option>
+                <option value="incendio" {% if filtro=='incendio' %}selected{% endif %}>Posible incendio</option>
+                <option value="resueltas" {% if filtro=='resueltas' %}selected{% endif %}>Resueltas</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="full-alert-list">
+        {% for alerta in alertas %}
+        <div class="full-alert {% if alerta.nivel == 'ALERTA' %}danger{% elif alerta.nivel == 'RIESGO_ALTO' %}warning{% else %}normal{% endif %}">
+            <div class="full-alert-icon">
+                <i class="fa-solid fa-{% if alerta.nivel == 'ALERTA' %}fire{% elif alerta.nivel == 'RIESGO_ALTO' %}temperature-high{% else %}check{% endif %}"></i>
+            </div>
+            <div>
+                <strong>{{ alerta.titulo }}</strong>
+                <p>{{ alerta.descripcion }}</p>
+                <small>{{ alerta.estacion }} · {{ alerta.fecha_creacion }}</small>
+            </div>
+            <span>{{ alerta.nivel }}</span>
+            {% if puede_gestionar and alerta.id_estado_alerta == 1 %}
+            <div style="display:flex; gap:5px;">
+                <form method="POST" action="{{ url_for('atender_alerta', id_alerta=alerta.id_alerta) }}" style="display:inline;">
+                    <button type="submit" class="btn btn-sm" style="background:#e5a500;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Atender</button>
+                </form>
+                <form method="POST" action="{{ url_for('resolver_alerta', id_alerta=alerta.id_alerta) }}" style="display:inline;">
+                    <button type="submit" class="btn btn-sm" style="background:#159447;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Resolver</button>
+                </form>
+                <form method="POST" action="{{ url_for('marcar_falsa_alerta', id_alerta=alerta.id_alerta) }}" style="display:inline;">
+                    <button type="submit" class="btn btn-sm" style="background:#6b7280;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Falsa</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="full-alert normal">
+            <div class="full-alert-icon"><i class="fa-solid fa-check"></i></div>
+            <div><strong>No hay alertas registradas</strong><p>Todos los parámetros están dentro de los rangos normales.</p></div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

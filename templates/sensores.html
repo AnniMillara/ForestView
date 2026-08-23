@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Sensores{% endblock %}
+{% block category %}INTERNET OF THINGS{% endblock %}
+{% block page_title %}Sensores y dispositivos{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <span>INTERNET OF THINGS</span>
+    <h2>Sensores y dispositivos</h2>
+    <p>Estado de los dispositivos instalados en las zonas monitoreadas.</p>
+</div>
+
+<div class="sensor-grid">
+    {% for est in estaciones %}
+    <div class="sensor-card {% if est.id_estado_estacion != 1 %}offline-card{% endif %}">
+        <div class="sensor-top">
+            <div class="sensor-device-icon"><i class="fa-solid fa-microchip"></i></div>
+            <span class="sensor-{% if est.id_estado_estacion == 1 %}online{% else %}offline{% endif %}">
+                ● {% if est.id_estado_estacion == 1 %}ONLINE{% else %}OFFLINE{% endif %}
+            </span>
+        </div>
+        <h3>{{ est.nombre }}</h3>
+        <p>{{ est.zona or 'Sin zona' }}</p>
+
+        <div class="sensor-values">
+            <div>
+                <span>Temperatura</span>
+                <strong>{{ est.ult_temp if est.ult_temp is not none else '--' }} °C</strong>
+            </div>
+            <div>
+                <span>Humedad</span>
+                <strong>{{ est.ult_humedad if est.ult_humedad is not none else '--' }} %</strong>
+            </div>
+        </div>
+        <div class="sensor-footer">
+            <i class="fa-solid fa-clock"></i>
+            Actualizado hace {{ est.segundos_desde_ultima|default(0)|int }} segundos
+        </div>
+    </div>
+    {% else %}
+    <div class="sensor-card"><h3>No hay estaciones registradas</h3></div>
+    {% endfor %}
+</div>
+
+<!-- HARDWARE -->
+<div class="panel sensor-components">
+    <div class="panel-header">
+        <div>
+            <span class="panel-label">HARDWARE</span>
+            <h3>Componentes de la estación</h3>
+        </div>
+    </div>
+    <div class="component-list">
+        <div class="component">
+            <i class="fa-solid fa-microchip"></i>
+            <div>
+                <strong>ESP32</strong>
+                <span>Controlador principal</span>
+            </div>
+            <b style="color: #159447;">ACTIVO</b>
+        </div>
+        <div class="component">
+            <i class="fa-solid fa-temperature-half"></i>
+            <div>
+                <strong>DHT22</strong>
+                <span>Temperatura y humedad</span>
+            </div>
+            <b style="color: #159447;">ACTIVO</b>
+        </div>
+        <div class="component">
+            <i class="fa-solid fa-smog"></i>
+            <div>
+                <strong>MQ-2</strong>
+                <span>Detección de humo y gases</span>
+            </div>
+            <b style="color: #159447;">ACTIVO</b>
+        </div>
+    </div>
+</div>
+{% endblock %}

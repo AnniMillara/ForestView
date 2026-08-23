@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Estaciones{% endblock %}
+{% block page_title %}Gestión de Estaciones{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-tower-broadcast"></i> Estaciones</h1>
+    <a href="{{ url_for('nueva_estacion') }}" class="btn"><i class="fas fa-plus"></i> Nueva estación</a>
+</div>
+<table class="table">
+    <thead>
+        <tr><th>ID</th><th>Nombre</th><th>Código</th><th>Zona</th><th>Estado</th><th>IP</th><th>Última conexión</th><th>Acciones</th></tr>
+    </thead>
+    <tbody>
+    {% for est in estaciones %}
+    <tr>
+        <td>{{ est.id_estacion }}</td>
+        <td><a href="{{ url_for('estacion_detalle', id_estacion=est.id_estacion) }}">{{ est.nombre }}</a></td>
+        <td>{{ est.codigo }}</td>
+        <td>{{ est.zona or '—' }}</td>
+        <td><span class="estado-pill estado-{{ est.estado_nombre|lower }}">{{ est.estado_nombre }}</span></td>
+        <td>{{ est.ip or 'N/A' }}</td>
+        <td>{{ est.ultima_conexion or 'Nunca' }}</td>
+        <td class="acciones">
+            <a href="{{ url_for('editar_estacion', id_estacion=est.id_estacion) }}" class="btn btn-sm"><i class="fas fa-pen"></i></a>
+            <form method="POST" action="{{ url_for('eliminar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;" onsubmit="return confirm('¿Desactivar esta estación?');">
+                <button class="btn btn-sm btn-outline"><i class="fas fa-trash"></i></button>
+            </form>
+            <form method="POST" action="{{ url_for('regenerar_api_key', id_estacion=est.id_estacion) }}" style="display:inline;">
+                <button class="btn btn-sm btn-outline" title="Regenerar API key"><i class="fas fa-key"></i></button>
+            </form>
+        </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="empty-state">No hay estaciones registradas.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

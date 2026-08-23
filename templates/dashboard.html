@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block category %}MONITOREO{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- BIENVENIDA -->
+<div class="welcome">
+    <div>
+        <h2>Monitoreo forestal</h2>
+        <p>Supervisa las condiciones ambientales y detecta posibles riesgos en tiempo real.</p>
+    </div>
+    <div class="system-online">
+        <span></span>
+        <div>
+            <strong>Sistema operativo</strong>
+            <small id="sensorConnectionStatus">{{ online }}/{{ total }} estaciones conectadas</small>
+        </div>
+    </div>
+</div>
+
+<!-- ESTADÍSTICAS -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-title">Temperatura</span>
+            <div class="stat-icon temperature">
+                <i class="fa-solid fa-temperature-half"></i>
+            </div>
+        </div>
+        <div class="stat-value">
+            <strong id="temperature">{{ ultima_medicion.temperatura if ultima_medicion and ultima_medicion.temperatura is not none else '--' }}</strong>
+            <span>°C</span>
+        </div>
+        <div class="stat-footer positive">
+            <i class="fa-solid fa-arrow-{{ 'up' if ultima_medicion and ultima_medicion.temperatura and ultima_medicion.temperatura > 25 else 'down' }}"></i>
+            {% if ultima_medicion and ultima_medicion.temperatura is not none %}
+                {{ ((ultima_medicion.temperatura - 25) / 25 * 100)|round(1) }}% respecto al promedio
+            {% else %}
+                Sin datos
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-title">Humedad</span>
+            <div class="stat-icon humidity">
+                <i class="fa-solid fa-droplet"></i>
+            </div>
+        </div>
+        <div class="stat-value">
+            <strong id="humidity">{{ ultima_medicion.humedad if ultima_medicion and ultima_medicion.humedad is not none else '--' }}</strong>
+            <span>%</span>
+        </div>
+        <div class="stat-footer positive">
+            <i class="fa-solid fa-arrow-{{ 'up' if ultima_medicion and ultima_medicion.humedad and ultima_medicion.humedad > 50 else 'down' }}"></i>
+            {% if ultima_medicion and ultima_medicion.humedad is not none %}
+                {{ ((ultima_medicion.humedad - 50) / 50 * 100)|round(1) }}% respecto al promedio
+            {% else %}
+                Sin datos
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-title">Nivel de humo</span>
+            <div class="stat-icon smoke">
+                <i class="fa-solid fa-smog"></i>
+            </div>
+        </div>
+        <div class="stat-value">
+            <strong id="smoke">{{ ultima_medicion.humo_nombre if ultima_medicion else '--' }}</strong>
+            <span>nivel</span>
+        </div>
+        <div class="stat-footer positive">
+            <i class="fa-solid fa-check"></i>
+            {% if ultima_medicion and ultima_medicion.humo_nombre == 'NINGUNO' %}Nivel normal
+            {% elif ultima_medicion and ultima_medicion.humo_nombre == 'BAJO' %}Presencia leve
+            {% elif ultima_medicion and ultima_medicion.humo_nombre == 'MEDIO' %}Presencia moderada
+            {% elif ultima_medicion and ultima_medicion.humo_nombre == 'ALTO' %}⚠️ ¡Atención!
+            {% else %}Sin datos{% endif %}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-title">Nivel de riesgo</span>
+            <div class="stat-icon risk">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+        </div>
+        <div class="risk-value">
+            <span class="risk-indicator" style="background: {{ riesgo_actual.color_hex if riesgo_actual else '#159447' }}; box-shadow: 0 0 0 5px {{ riesgo_actual.color_hex + '22' if riesgo_actual else 'rgba(21,148,71,0.10)' }};"></span>
+            <strong id="risk" style="color: {{ riesgo_actual.color_hex if riesgo_actual else '#159447' }};">
+                {{ riesgo_actual.nombre if riesgo_actual else 'NORMAL' }}
+            </strong>
+        </div>
+        <div class="stat-footer">
+            {% if riesgo_actual %}
+                {% if riesgo_actual.nombre == 'NORMAL' %}Todos los parámetros normales
+                {% elif riesgo_actual.nombre == 'RIESGO_MODERADO' %}⚠️ Precauciones
+                {% elif riesgo_actual.nombre == 'RIESGO_ALTO' %}⚠️ Riesgo alto
+                {% else %}🚨 ¡Emergencia!{% endif %}
+            {% else %}Todos los parámetros normales{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- GRÁFICO + MAPA -->
+<div class="middle-grid">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">MONITOREO</span>
+                <h3>Condiciones ambientales</h3>
+            </div>
+            <select id="chartPeriod">
+                <option value="1h" {% if rango == '1h' %}selected{% endif %}>Última hora</option>
+                <option value="6h" {% if rango == '6h' %}selected{% endif %}>Últimas 6 horas</option>
+                <option value="24h" {% if rango == '24h' %}selected{% endif %}>Últimas 24 horas</option>
+                <option value="7d" {% if rango == '7d' %}selected{% endif %}>Últimos 7 días</option>
+            </select>
+        </div>
+        <div class="chart-container">
+            <canvas id="environmentChart"></canvas>
+        </div>
+    </div>
+
+    <div class="panel map-panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">UBICACIÓN</span>
+                <h3>Zonas monitoreadas</h3>
+            </div>
+        </div>
+        <div class="map-container">
+            <div id="dashboardMap"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ALERTAS + DISPOSITIVOS -->
+<div class="bottom-grid">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">ALERTAS</span>
+                <h3>Alertas recientes</h3>
+            </div>
+            <a href="{{ url_for('alertas') }}" class="view-link">Ver todas</a>
+        </div>
+        <div class="alerts-list">
+            {% for alerta in alertas_activas[:3] %}
+            <div class="alert-item {% if alerta.nivel == 'ALERTA' %}danger{% elif alerta.nivel == 'RIESGO_ALTO' %}warning{% else %}normal{% endif %}">
+                <div class="alert-icon">
+                    <i class="fa-solid fa-{% if alerta.nivel == 'ALERTA' %}triangle-exclamation{% elif alerta.nivel == 'RIESGO_ALTO' %}circle-exclamation{% else %}circle-check{% endif %}"></i>
+                </div>
+                <div class="alert-info">
+                    <strong>{{ alerta.titulo }}</strong>
+                    <span>{{ alerta.estacion }}</span>
+                    <small>{{ alerta.fecha_creacion }}</small>
+                </div>
+                <span class="alert-status {% if alerta.nivel == 'ALERTA' %}danger{% elif alerta.nivel == 'RIESGO_ALTO' %}warning{% else %}normal{% endif %}">
+                    {{ alerta.nivel }}
+                </span>
+            </div>
+            {% else %}
+            <div class="alert-item normal">
+                <div class="alert-icon"><i class="fa-solid fa-check"></i></div>
+                <div class="alert-info"><strong>Sin alertas activas</strong><span>Todos los parámetros normales</span></div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">DISPOSITIVOS</span>
+                <h3>Estado de sensores</h3>
+            </div>
+        </div>
+        <div class="device-list">
+            {% for est in estaciones[:3] %}
+            <div class="device">
+                <div class="device-icon"><i class="fa-solid fa-microchip"></i></div>
+                <div class="device-info">
+                    <strong>{{ est.nombre }}</strong>
+                    <span>{{ est.zona or 'Sin zona' }}</span>
+                </div>
+                <div class="device-status {% if est.id_estado_estacion == 1 %}online{% else %}offline{% endif %}">
+                    <span></span> {{ est.estado_nombre }}
+                </div>
+            </div>
+            {% else %}
+            <div class="device"><div class="device-info"><span>No hay estaciones registradas</span></div></div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Inicializar el gráfico con los datos históricos pasados desde Flask
+    document.addEventListener('DOMContentLoaded', function() {
+        const historico = {{ historico|tojson if historico else [] }};
+        // Llamar a la función global definida en dashboard.js
+        if (typeof window.initializeChart === 'function') {
+            window.initializeChart(historico);
+        }
+    });
+</script>
+{% endblock %}

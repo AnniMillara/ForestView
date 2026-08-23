@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ estacion.nombre }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-tower-broadcast"></i> {{ estacion.nombre }}
+        <span class="estado-pill estado-{{ estacion.estado_nombre|lower }}">{{ estacion.estado_nombre }}</span>
+    </h1>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Volver</a>
+</div>
+
+<div class="detalle-grid">
+    <div class="panel">
+        <h3><i class="fas fa-circle-info"></i> Información general</h3>
+        <dl class="info-list">
+            <dt>Código</dt><dd>{{ estacion.codigo }}</dd>
+            <dt>Zona</dt><dd>{{ estacion.zona or 'Sin zona' }}</dd>
+            <dt>IP (red local)</dt><dd>{{ estacion.ip or 'N/A' }}</dd>
+            <dt>Ubicación (lat, lon)</dt><dd>{{ estacion.latitud }}, {{ estacion.longitud }}</dd>
+            <dt>Última conexión</dt><dd>{{ estacion.ultima_conexion or 'Nunca' }}</dd>
+            <dt>Registrada desde</dt><dd>{{ estacion.fecha_registro }}</dd>
+        </dl>
+        <p class="nota-ip"><i class="fas fa-triangle-exclamation"></i> La IP identifica a la estación dentro de la red WiFi local; no representa su ubicación geográfica.</p>
+    </div>
+
+    <div class="panel">
+        <h3><i class="fas fa-thermometer-half"></i> Última medición</h3>
+        {% if medicion %}
+        <dl class="info-list">
+            <dt>Temperatura</dt><dd>{{ medicion.temperatura if medicion.temperatura is not none else '—' }} °C</dd>
+            <dt>Humedad</dt><dd>{{ medicion.humedad if medicion.humedad is not none else '—' }} %</dd>
+            <dt>Nivel de humo</dt><dd>{{ medicion.humo_nombre or 'Sin datos' }}</dd>
+            <dt>MQ-2 AO</dt><dd>{{ medicion.mq2_ao if medicion.mq2_ao is not none else '—' }}</dd>
+            <dt>AO base</dt><dd>{{ medicion.mq2_base if medicion.mq2_base is not none else '—' }}</dd>
+            <dt>Cambio AO</dt><dd>{{ medicion.cambio_ao if medicion.cambio_ao is not none else '—' }}</dd>
+            <dt>MQ-2 DO</dt><dd>{{ medicion.mq2_do if medicion.mq2_do is not none else '—' }}</dd>
+            <dt>Fecha</dt><dd>{{ medicion.fecha_hora }}</dd>
+        </dl>
+        {% else %}
+        <p class="empty-state">Esta estación aún no ha enviado mediciones.</p>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <h3><i class="fas fa-microchip"></i> Estado de sensores</h3>
+        <table class="table table-compact">
+            <thead><tr><th>Sensor</th><th>Estado</th><th>Pin</th></tr></thead>
+            <tbody>
+            {% for s in sensores %}
+            <tr>
+                <td>{{ s.tipo }}</td>
+                <td><span class="estado-pill estado-sensor-{{ s.estado|lower }}">{{ s.estado }}</span></td>
+                <td>{{ s.pin_gpio if s.pin_gpio else s.canal }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h3><i class="fas fa-map-location-dot"></i> Ubicación</h3>
+        <div id="map-estacion"></div>
+    </div>
+</div>
+
+<h2 class="section-title"><i class="fas fa-chart-line"></i> Historial reciente</h2>
+<canvas id="chartHistorico" height="90"></canvas>
+
+<h2 class="section-title"><i class="fas fa-triangle-exclamation"></i> Alertas de esta estación</h2>
+<table class="table">
+    <thead><tr><th>ID</th><th>Tipo</th><th>Nivel</th><th>Estado</th><th>Fecha</th></tr></thead>
+    <tbody>
+    {% for a in alertas %}
+    <tr>
+        <td>#{{ a.id_alerta }}</td>
+        <td>{{ a.tipo }}</td>
+        <td>{{ a.nivel }}</td>
+        <td>{{ a.estado }}</td>
+        <td>{{ a.fecha_creacion }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty-state">Sin alertas registradas</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const mapEst = L.map('map-estacion').setView([{{ estacion.latitud }}, {{ estacion.longitud }}], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(mapEst);
+    L.marker([{{ estacion.latitud }}, {{ estacion.longitud }}]).addTo(mapEst).bindPopup("{{ estacion.nombre }}");
+
+    const historico = {{ historico|tojson }};
+    new Chart(document.getElementById('chartHistorico'), {
+        type: 'line',
+        data: {
+            labels: historico.map(h => h.fecha_hora),
+            datasets: [
+                { label: 'Temperatura (°C)', data: historico.map(h => h.temperatura), borderColor: '#e74c3c', tension: 0.3, yAxisID: 'y' },
+                { label: 'Humedad (%)', data: historico.map(h => h.humedad), borderColor: '#3498db', tension: 0.3, yAxisID: 'y' },
+                { label: 'Cambio AO (humo)', data: historico.map(h => h.cambio_ao), borderColor: '#f1c40f', tension: 0.3, yAxisID: 'y1' }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { position: 'left' },
+                y1: { position: 'right', grid: { drawOnChartArea: false } }
+            },
+            plugins: { legend: { labels: { color: '#cfd8e3' } } }
+        }
+    });
+</script>
+{% endblock %}

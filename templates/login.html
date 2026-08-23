@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Iniciar sesión{% endblock %}
+{% block content %}
+<div class="login-container">
+    <div class="login-logo">
+        <img src="{{ url_for('static', filename='img/logo_forestguard.png') }}" alt="ForestGuard" height="60">
+    </div>
+    <h2>ForestGuard</h2>
+    <p class="subtitle">Sistema de monitoreo ambiental</p>
+    <form method="POST">
+        <div class="form-group">
+            <label><i class="fas fa-user"></i> Usuario</label>
+            <input type="text" name="usuario" placeholder="Ingresa tu usuario" required>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-lock"></i> Contraseña</label>
+            <input type="password" name="contrasena" placeholder="Ingresa tu contraseña" required>
+        </div>
+        <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+    </form>
+    <p class="aviso">ForestGuard detecta y monitorea posibles incendios. No reemplaza a los servicios de emergencia.</p>
+</div>
+{% endblock %}
