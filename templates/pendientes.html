@@ -17,29 +17,31 @@
         <a href="{{ url_for('listar_estaciones') }}" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Volver</a>
     </div>
 
-    <table class="table">
-        <thead>
-            <tr><th>Código</th><th>Nombre</th><th>Fecha registro</th><th>Acciones</th></tr>
-        </thead>
-        <tbody>
-        {% for est in pendientes %}
-        <tr>
-            <td><strong>{{ est.codigo }}</strong></td>
-            <td>{{ est.nombre }}</td>
-            <td>{{ est.fecha_registro }}</td>
-            <td>
-                <form method="POST" action="{{ url_for('aprobar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;">
-                    <button type="submit" class="btn btn-sm" style="background:#159447;"><i class="fas fa-check"></i> Aprobar</button>
-                </form>
-                <form method="POST" action="{{ url_for('rechazar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;">
-                    <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i> Rechazar</button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="empty-state">No hay estaciones pendientes.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-wrapper">
+        <table class="table">
+            <thead>
+                <tr><th>Código</th><th>Nombre</th><th>Fecha registro</th><th>Acciones</th></tr>
+            </thead>
+            <tbody>
+            {% for est in pendientes %}
+            <tr>
+                <td data-label="Código"><strong>{{ est.codigo }}</strong></td>
+                <td data-label="Nombre">{{ est.nombre }}</td>
+                <td data-label="Fecha registro">{{ est.fecha_registro }}</td>
+                <td data-label="Acciones" class="acciones">
+                    <form method="POST" action="{{ url_for('aprobar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm" style="background:#159447;"><i class="fas fa-check"></i> Aprobar</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('rechazar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i> Rechazar</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="empty-state">No hay estaciones pendientes.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}

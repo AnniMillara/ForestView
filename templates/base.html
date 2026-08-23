@@ -27,7 +27,6 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Estilos adicionales -->
     <style>
         /* Modal de notificaciones */
         .modal {
@@ -135,31 +134,10 @@
             background: #fef9e7;
             color: #d97706;
         }
-
-        /* Ocultar scroll del sidebar */
-        .sidebar-menu {
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-        .sidebar-menu::-webkit-scrollbar {
-            display: none;
-        }
-
-        /* Notificación vacía */
         .empty-notifications {
             color: #718078;
             text-align: center;
             padding: 20px 0;
-        }
-
-        /* Ajustes para estaciones */
-        .estado-pill.estado-offline {
-            background: #f3f4f6;
-            color: #6b7280;
-        }
-        .estado-pill.estado-online {
-            background: #eaf8ef;
-            color: #159447;
         }
     </style>
 </head>
@@ -169,8 +147,7 @@
     <div class="dashboard">
 
         <!-- ==================== SIDEBAR ==================== -->
-        <aside class="sidebar">
-
+        <aside class="sidebar" id="sidebar">
             <!-- LOGO -->
             <div class="sidebar-logo">
                 <div class="logo-icon">
@@ -223,13 +200,14 @@
 
                 <p class="menu-title">SISTEMA</p>
 
-                {% if session.tipo == 'ADMINISTRADOR' %}
+                <!-- Configuración visible para TODOS los usuarios autenticados -->
                 <a href="{{ url_for('configuracion') }}"
                     class="menu-item {% if request.endpoint == 'configuracion' %}active{% endif %}">
                     <i class="fa-solid fa-gear"></i>
                     <span>Configuración</span>
                 </a>
 
+                {% if session.tipo == 'ADMINISTRADOR' %}
                 <a href="{{ url_for('usuarios') }}"
                     class="menu-item {% if request.endpoint == 'usuarios' %}active{% endif %}">
                     <i class="fa-solid fa-users"></i>
@@ -288,17 +266,25 @@
                     </a>
                 </div>
             </div>
-
         </aside>
+
+        <!-- OVERLAY (para cerrar menú en móvil) -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
         <!-- ==================== MAIN CONTENT ==================== -->
         <main class="main-content">
 
             <!-- TOPBAR -->
             <header class="topbar">
-                <div class="page-title">
-                    <span>{% block category %}MONITOREO{% endblock %}</span>
-                    <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <!-- Botón hamburguesa -->
+                    <button class="hamburger" id="menuToggle" aria-label="Abrir menú">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="page-title">
+                        <span>{% block category %}MONITOREO{% endblock %}</span>
+                        <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+                    </div>
                 </div>
 
                 <div class="topbar-actions">
@@ -601,6 +587,56 @@
                 init();
             }
         })();
+    </script>
+
+    <!-- ========================================================= -->
+    <!--            SCRIPT PARA MENÚ HAMBURGUESA                   -->
+    <!-- ========================================================= -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggle = document.getElementById('menuToggle');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            function openMenu() {
+                sidebar.classList.add('open');
+                overlay.classList.add('active');
+            }
+
+            function closeMenu() {
+                sidebar.classList.remove('open');
+                overlay.classList.remove('active');
+            }
+
+            if (toggle) {
+                toggle.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (sidebar.classList.contains('open')) {
+                        closeMenu();
+                    } else {
+                        openMenu();
+                    }
+                });
+            }
+
+            if (overlay) {
+                overlay.addEventListener('click', closeMenu);
+            }
+
+            // Cerrar al hacer clic en un enlace del menú
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.addEventListener('click', closeMenu);
+            });
+
+            // En escritorio, asegurar que el sidebar se muestre
+            function handleResize() {
+                if (window.innerWidth >= 768) {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('active');
+                }
+            }
+            window.addEventListener('resize', handleResize);
+        });
     </script>
 
     {% block extra_scripts %}{% endblock %}

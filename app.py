@@ -73,10 +73,10 @@ def inject_alertas_count():
     return {'alertas_activas_count': 0}
 
 # =====================================================================
-# INICIALIZACIÓN (mejorada)
+# INICIALIZACIÓN
 # =====================================================================
 def init_db():
-    """Crea/actualiza usuarios por defecto. Garantiza que admin exista y esté activo."""
+    """Crea/actualiza usuarios por defecto y estructura de preferencias."""
     # ---------- ADMIN ----------
     admin = db.get_one(
         "SELECT id_usuario, contrasena_hash, id_estado_usuario FROM usuarios WHERE nombre_usuario = %s",
@@ -137,6 +137,19 @@ def init_db():
             """, (user, hash_pass, email, nombre, tipo))
             print(f"✅ Usuario {user} creado ({user} / {pwd})")
 
+    # ---------- CREAR TABLA DE PREFERENCIAS SI NO EXISTE ----------
+    db.execute_query("""
+        CREATE TABLE IF NOT EXISTS preferencias_usuario (
+            id_preferencia INT PRIMARY KEY AUTO_INCREMENT,
+            id_usuario INT NOT NULL UNIQUE,
+            notificaciones TINYINT(1) DEFAULT 1,
+            auto_update TINYINT(1) DEFAULT 1,
+            ubicacion TINYINT(1) DEFAULT 1,
+            FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
+        )
+    """)
+    print("✅ Tabla preferencias_usuario asegurada.")
+
     # ---------- AJUSTES DE TABLA ----------
     try:
         db.execute_query("ALTER TABLE estaciones MODIFY latitud DECIMAL(10,8) NULL")
@@ -156,11 +169,36 @@ def init_db():
             db.execute_query("INSERT INTO estados_estacion (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
             print(f"✅ Estado '{nombre}' agregado.")
 
-    # Asegurar tipos de sensor
     for nombre, desc in [('DHT22', 'Temperatura y humedad'), ('MQ-2', 'Sensor de gases/humo'), ('LED_RGB', 'Indicador visual')]:
         if not db.get_one("SELECT id_tipo_sensor FROM tipos_sensor WHERE nombre = %s", (nombre,)):
             db.execute_query("INSERT INTO tipos_sensor (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
             print(f"✅ Tipo sensor '{nombre}' agregado.")
+
+# =====================================================================
+# FUNCIÓN PARA CARGAR PREFERENCIAS DEL USUARIO
+# =====================================================================
+def cargar_preferencias_usuario(id_usuario):
+    """Carga las preferencias del usuario desde la BD o crea las predeterminadas."""
+    pref = db.get_one("SELECT * FROM preferencias_usuario WHERE id_usuario = %s", (id_usuario,))
+    if not pref:
+        db.execute_query("""
+            INSERT INTO preferencias_usuario (id_usuario, notificaciones, auto_update, ubicacion)
+            VALUES (%s, 1, 1, 1)
+        """, (id_usuario,))
+        pref = db.get_one("SELECT * FROM preferencias_usuario WHERE id_usuario = %s", (id_usuario,))
+    return {
+        'notificaciones': bool(pref.get('notificaciones', 1)),
+        'auto_update': bool(pref.get('auto_update', 1)),
+        'ubicacion': bool(pref.get('ubicacion', 1))
+    }
+
+def guardar_preferencias_usuario(id_usuario, notificaciones, auto_update, ubicacion):
+    """Guarda las preferencias del usuario en la BD."""
+    db.execute_query("""
+        UPDATE preferencias_usuario
+        SET notificaciones = %s, auto_update = %s, ubicacion = %s
+        WHERE id_usuario = %s
+    """, (1 if notificaciones else 0, 1 if auto_update else 0, 1 if ubicacion else 0, id_usuario))
 
 # =====================================================================
 # HELPERS DE NEGOCIO
@@ -375,7 +413,6 @@ def crear_sensores_estacion(id_estacion):
 # =====================================================================
 @app.route('/')
 def index():
-    # Redirige siempre al login
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -416,7 +453,6 @@ def register():
         contrasena = request.form.get('contrasena', '')
         confirmar = request.form.get('confirmar', '')
 
-        # Validaciones
         if not nombre_usuario or not email or not contrasena or not confirmar:
             flash('Todos los campos son obligatorios', 'danger')
             return redirect(url_for('register'))
@@ -436,12 +472,11 @@ def register():
             flash('El email ya está registrado', 'danger')
             return redirect(url_for('register'))
 
-        # Crear usuario con rol OBSERVADOR (4) por defecto
         hash_pass = generate_password_hash(contrasena)
         db.execute_query("""
             INSERT INTO usuarios (nombre_usuario, contrasena_hash, email, nombre_completo, id_tipo_usuario)
             VALUES (%s, %s, %s, %s, %s)
-        """, (nombre_usuario, hash_pass, email, nombre_completo, 4))  # 4 = OBSERVADOR
+        """, (nombre_usuario, hash_pass, email, nombre_completo, 4))
 
         flash('Registro exitoso. Ya puedes iniciar sesión.', 'success')
         return redirect(url_for('login'))
@@ -606,12 +641,10 @@ def aprobar_estacion(id_estacion):
     if not est:
         flash('Estación no encontrada', 'danger')
         return redirect(url_for('pendientes'))
-    # Cambiar a ONLINE y activa=1
     db.execute_query("""
         UPDATE estaciones SET activa = 1, id_estado_estacion = %s
         WHERE id_estacion = %s
     """, (ESTADO_ESTACION['ONLINE'], id_estacion))
-    # Crear sensores
     crear_sensores_estacion(id_estacion)
     registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} aprobada")
     flash('Estación aprobada correctamente', 'success')
@@ -639,7 +672,6 @@ def desconectar_estacion(id_estacion):
     if est:
         db.execute_query("UPDATE estaciones SET activa = 0, id_estado_estacion = %s WHERE id_estacion = %s",
                          (ESTADO_ESTACION['OFFLINE'], id_estacion))
-        # Resolver alertas activas
         db.execute_query("""
             UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
             WHERE id_estacion = %s AND id_estado_alerta = %s
@@ -761,12 +793,10 @@ def editar_estacion(id_estacion):
 def eliminar_estacion(id_estacion):
     estacion = db.get_one("SELECT nombre FROM estaciones WHERE id_estacion = %s", (id_estacion,))
     if estacion:
-        # Resolver TODAS las alertas activas
         db.execute_query("""
             UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
             WHERE id_estacion = %s AND id_estado_alerta = %s
         """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
-        # Desactivar
         db.execute_query("UPDATE estaciones SET activa = 0 WHERE id_estacion = %s", (id_estacion,))
         registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {estacion['nombre']} eliminada y alertas resueltas")
         flash('Estación desactivada y sus alertas resueltas.', 'success')
@@ -1015,7 +1045,6 @@ def sensores():
         WHERE e.activa = 1
         ORDER BY e.nombre
     """)
-    # Asegurar valores por defecto
     for est in estaciones:
         if not est.get('dht_estado'):
             est['dht_estado'] = 'SIN_DATOS'
@@ -1030,23 +1059,44 @@ def sensores():
     )
 
 # =====================================================================
-# CONFIGURACIÓN, USUARIOS, ADMIN, MEDIA, AYUDA
+# CONFIGURACIÓN (PERSONAL POR USUARIO)
 # =====================================================================
 @app.route('/configuracion', methods=['GET', 'POST'])
 @login_required
-@admin_required
 def configuracion():
+    """Página de configuración personal para cada usuario."""
+    # Cargar preferencias desde la base de datos
+    prefs = cargar_preferencias_usuario(session['usuario_id'])
+    
     if request.method == 'POST':
-        session['notificaciones'] = 'notificaciones' in request.form
-        session['auto_update'] = 'auto_update' in request.form
-        session['ubicacion'] = 'ubicacion' in request.form
+        notificaciones = 'notificaciones' in request.form
+        auto_update = 'auto_update' in request.form
+        ubicacion = 'ubicacion' in request.form
+        
+        # Guardar en base de datos
+        guardar_preferencias_usuario(session['usuario_id'], notificaciones, auto_update, ubicacion)
+        
+        # Actualizar sesión
+        session['notificaciones'] = notificaciones
+        session['auto_update'] = auto_update
+        session['ubicacion'] = ubicacion
+        
         registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje='Preferencias actualizadas')
-        flash('Preferencias actualizadas', 'success')
+        flash('Preferencias guardadas correctamente', 'success')
+        return redirect(url_for('configuracion'))
+    
+    # Si no hay preferencias en sesión, cargarlas desde BD
+    if 'notificaciones' not in session:
+        session['notificaciones'] = prefs['notificaciones']
+        session['auto_update'] = prefs['auto_update']
+        session['ubicacion'] = prefs['ubicacion']
+    
     config = {
         'notificaciones': session.get('notificaciones', True),
         'auto_update': session.get('auto_update', True),
         'ubicacion': session.get('ubicacion', True)
     }
+    
     return render_template('configuracion.html',
         page="configuracion",
         title="Configuración",
@@ -1055,6 +1105,9 @@ def configuracion():
         now=datetime.datetime.now()
     )
 
+# =====================================================================
+# USUARIOS, ADMIN, MEDIA, AYUDA
+# =====================================================================
 @app.route('/usuarios')
 @login_required
 @admin_required
@@ -1284,7 +1337,6 @@ def api_recibir_datos(codigo):
 
     registrar_evento('LECTURA_RECIBIDA', id_estacion=id_estacion, mensaje='Medición recibida')
 
-    # Asegurar sensores
     crear_sensores_estacion(id_estacion)
 
     def actualizar_estado_sensor(id_tipo, ok):
@@ -1304,7 +1356,6 @@ def api_recibir_datos(codigo):
     db.execute_query("UPDATE estaciones SET ultima_conexion = NOW(), ip = %s WHERE id_estacion = %s", (request.remote_addr, id_estacion))
     db.execute_query("INSERT INTO historial_conexiones (id_estacion, ip) VALUES (%s, %s)", (id_estacion, request.remote_addr))
 
-    # Cambiar estado de la estación
     if hubo_error_sensor:
         cambiar_estado_estacion(id_estacion, 'ERROR')
         crear_o_actualizar_alerta(
@@ -1404,7 +1455,7 @@ def api_dashboard_data():
     return jsonify(estaciones)
 
 # =====================================================================
-# NUEVA API: GUARDAR UBICACIÓN DEL USUARIO
+# API - GUARDAR UBICACIÓN DEL USUARIO
 # =====================================================================
 @app.route('/api/set_location', methods=['POST'])
 @login_required
@@ -1424,7 +1475,7 @@ def api_set_location():
         return jsonify({'error': 'Lat/Lon inválidos'}), 400
 
 # =====================================================================
-# NUEVA API: OBTENER ALERTAS ACTIVAS CON DISTANCIA
+# API - OBTENER ALERTAS ACTIVAS CON DISTANCIA
 # =====================================================================
 @app.route('/api/alertas_activas')
 @login_required

@@ -2,21 +2,18 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
+#include <ESPmDNS.h>
 
 // ============================================================
-//                     FORESTGUARD
-//              SISTEMA DE MONITOREO
+//                     FORESTGUARD ESP32
+//              SISTEMA DE MONITOREO (VERSION MEJORADA)
 // ============================================================
-// DHT22 -> Temperatura + Humedad
-// MQ-2  -> Detección de humo/gases
-// RGB   -> Estado del sistema
-//
-// 🔵 AZUL     = CALIBRACIÓN INICIAL (60 segundos)
+// 🔵 AZUL     = CALIBRACIÓN INICIAL / RECALIBRACIÓN
 // 🟢 VERDE    = NORMAL
 // 🟡 AMARILLO = RIESGO MODERADO
 // 🟠 NARANJO  = RIESGO ALTO
 // 🔴 ROJO     = ALERTA / POSIBLE INCENDIO
-// 🔵 AZUL     = ERROR DHT22 (parpadeo)
+// 💡 PARPADEO AZUL = ERROR DHT22
 // ============================================================
 
 // ============================================================
@@ -37,9 +34,10 @@ const char* WIFI_SSID = "GameofThrones";
 const char* WIFI_PASSWORD = "elsenordelosanillos";
 
 // ============================================================
-//                  CONFIGURACIÓN FLASK (IP FIJA)
+//              CONFIGURACIÓN DEL SERVIDOR (mDNS + FALLBACK)
 // ============================================================
-const char* SERVER_HOST = "192.168.18.116";
+const char* SERVER_HOSTNAME = "forestguard";   // nombre mDNS: forestguard.local
+const char* SERVER_HOST_FALLBACK = "192.168.18.116";  // IP fija por si mDNS falla
 const int SERVER_PORT = 5000;
 
 // ============================================================
@@ -47,14 +45,7 @@ const int SERVER_PORT = 5000;
 // ============================================================
 String stationCode = "";
 const char* DEFAULT_API_KEY = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
-
-// ============================================================
-//                  URL DEL SERVIDOR
-// ============================================================
-String serverUrl() {
-  return String("http://") + SERVER_HOST + ":" + SERVER_PORT +
-         "/api/estaciones/" + stationCode + "/datos";
-}
+String serverIP = "";
 
 // ============================================================
 //                         DHT22
@@ -71,7 +62,7 @@ const int CANAL_VERDE = 1;
 const int CANAL_AZUL  = 2;
 
 // ============================================================
-//              UMBRALES (iguales para la ESP32 y Flask)
+//              UMBRALES (ajustables)
 // ============================================================
 const float TEMP_RIESGO  = 30.0;
 const float TEMP_ALTA    = 35.0;
@@ -79,22 +70,68 @@ const float TEMP_CRITICA = 40.0;
 const float HUMEDAD_RIESGO  = 45.0;
 const float HUMEDAD_BAJA    = 30.0;
 const float HUMEDAD_CRITICA = 15.0;
-const int HUMO_BAJO  = 100;
-const int HUMO_MEDIO = 300;
-const int HUMO_ALTO  = 500;
 
-int estadoDONormal = HIGH;
+// Umbrales de cambio AO (se aplican sobre la base dinámica)
+const int HUMO_CAMBIO_BAJO  = 50;   // Reducido para mayor sensibilidad pero con filtro
+const int HUMO_CAMBIO_MEDIO = 150;
+const int HUMO_CAMBIO_ALTO  = 300;
+
+// ============================================================
+//                    VARIABLES DE CALIBRACIÓN
+// ============================================================
 int aoBase = 0;
+int estadoDONormal = HIGH;
+unsigned long ultimaCalibracion = 0;
+const unsigned long INTERVALO_RECALIBRACION = 600000; // 10 minutos
+
+// ============================================================
+//                    FILTRO DE LECTURAS
+// ============================================================
+const int MUESTRAS_PROMEDIO = 5;
+float tempBuffer[MUESTRAS_PROMEDIO];
+float humBuffer[MUESTRAS_PROMEDIO];
+int indiceBuffer = 0;
+bool bufferLleno = false;
+
+// ============================================================
+//               PERSISTENCIA PARA DETECCIÓN DE HUMO
+// ============================================================
+const int LECTURAS_PARA_ALERTA = 3;  // Número de lecturas consecutivas para activar alerta
+int contadorHumoBajo = 0;
+int contadorHumoMedio = 0;
+int contadorHumoAlto = 0;
 
 // ============================================================
 //                       TIEMPOS
 // ============================================================
-const unsigned long INTERVALO_LECTURA = 2000;
-const unsigned long INTERVALO_ENVIO = 5000;
-const unsigned long TIEMPO_CALIBRACION = 60000;  // 60 segundos
+const unsigned long INTERVALO_LECTURA = 2000;   // 2 segundos entre lecturas
+const unsigned long INTERVALO_ENVIO = 5000;     // 5 segundos entre envíos
+const unsigned long TIEMPO_CALIBRACION = 30000; // 30 segundos de calibración inicial
 
 unsigned long ultimaLectura = 0;
 unsigned long ultimoEnvio = 0;
+unsigned long inicioCalibracion = 0;
+
+// ============================================================
+//                    DECLARACIONES DE FUNCIONES
+// ============================================================
+void ledApagado();
+void ledVerde();
+void ledRojo();
+void ledAzul();
+void ledAmarillo();
+void ledNaranjo();
+void ledParpadeoAzul();
+void calibrarMQ2(const char* motivo);
+bool leerDHT22(float &temp, float &hum);
+void agregarMuestra(float temp, float hum);
+float obtenerPromedio(float* buffer);
+int clasificarHumoConPersistencia(int cambioAO, bool humoDO);
+void evaluarForestGuard(float temp, float hum, int nivelHumo);
+void conectarWiFi();
+void resolverServidor();
+void comprobarWiFi();
+void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, int cambioAO, int mq2DO, int nivelHumo);
 
 // ============================================================
 //                    FUNCIONES LED
@@ -135,155 +172,135 @@ void ledNaranjo() {
   ledcWrite(CANAL_AZUL, 0);
 }
 
-// ============================================================
-//                 SECUENCIA DE ENCENDIDO
-// ============================================================
-void secuenciaInicio() {
-  Serial.println();
-  Serial.println("======================================");
-  Serial.println("           FORESTGUARD");
-  Serial.println("       INICIANDO SISTEMA");
-  Serial.println("======================================");
-  ledRojo(); delay(300);
-  ledVerde(); delay(300);
-  ledAzul(); delay(300);
-  ledAmarillo(); delay(300);
-  ledNaranjo(); delay(300);
-  ledApagado();
-  Serial.println("LED RGB -> OK");
-}
-
-// ============================================================
-//                    PRUEBAS
-// ============================================================
-void pruebaLED() {
-  Serial.println();
-  Serial.println("------ PRUEBA LED RGB ------");
-  ledRojo(); Serial.println("ROJO"); delay(800);
-  ledVerde(); Serial.println("VERDE"); delay(800);
-  ledAzul(); Serial.println("AZUL"); delay(800);
-  ledAmarillo(); Serial.println("AMARILLO"); delay(800);
-  ledNaranjo(); Serial.println("NARANJO"); delay(800);
-  ledApagado(); Serial.println("APAGADO"); delay(500);
-  Serial.println("LED RGB -> OK");
-}
-
-bool pruebaDHT22() {
-  Serial.println();
-  Serial.println("------ PRUEBA DHT22 ------");
-  delay(2000);
-  float temperatura = dht.readTemperature();
-  float humedad = dht.readHumidity();
-  if (isnan(temperatura) || isnan(humedad)) {
-    Serial.println("DHT22 -> ERROR");
-    return false;
+void ledParpadeoAzul() {
+  static unsigned long ultimoParpadeo = 0;
+  if (millis() - ultimoParpadeo > 500) {
+    ultimoParpadeo = millis();
+    static bool estado = false;
+    estado = !estado;
+    if (estado) ledAzul(); else ledApagado();
   }
-  Serial.println("DHT22 -> OK");
-  Serial.print("Temperatura: "); Serial.print(temperatura, 1); Serial.println(" C");
-  Serial.print("Humedad: "); Serial.print(humedad, 1); Serial.println(" %");
-  return true;
-}
-
-void pruebaMQ2() {
-  Serial.println();
-  Serial.println("------ PRUEBA MQ-2 ------");
-  int ao = analogRead(MQ2_AO);
-  int estadoDO = digitalRead(MQ2_DO);
-  Serial.print("AO = "); Serial.println(ao);
-  Serial.print("DO = "); Serial.println(estadoDO);
-  Serial.println("MQ-2 -> SEÑAL RECIBIDA");
 }
 
 // ============================================================
-//                 CALIBRACIÓN MQ-2 (60 segundos, LED AZUL)
+//                 CALIBRACIÓN MQ-2 (dinámica)
 // ============================================================
-void calibrarMQ2() {
+void calibrarMQ2(const char* motivo) {
   Serial.println();
   Serial.println("======================================");
-  Serial.println("          CALIBRANDO MQ-2");
+  Serial.print("   CALIBRANDO MQ-2: ");
+  Serial.println(motivo);
   Serial.println("======================================");
-  Serial.println("NO acerques humo.");
-  Serial.println("NO acerques cigarros.");
-  Serial.println("NO acerques fuego.");
-  Serial.println("Midiendo ambiente normal durante 60 segundos...");
-  Serial.println();
+  Serial.println("Mantén el sensor en aire limpio.");
+  ledAzul();
 
-  ledAzul();  // 🔵 AZUL durante calibración
   unsigned long inicio = millis();
   long sumaAO = 0;
   int cantidad = 0;
   int high = 0, low = 0;
 
-  while (millis() - inicio < TIEMPO_CALIBRACION) {
+  // Tomar 20 muestras en 5 segundos
+  while (millis() - inicio < 5000) {
     int ao = analogRead(MQ2_AO);
     int estadoDO = digitalRead(MQ2_DO);
     sumaAO += ao;
     cantidad++;
     if (estadoDO == HIGH) high++; else low++;
     delay(250);
-    // Mostrar progreso cada 5 segundos
-    if ((millis() - inicio) % 5000 < 250) {
-      Serial.print(".");
-    }
   }
-  Serial.println();
 
   if (cantidad > 0) aoBase = sumaAO / cantidad;
   estadoDONormal = (high >= low) ? HIGH : LOW;
 
-  Serial.println();
   Serial.println("--------------------------------------");
   Serial.print("AO BASE     = "); Serial.println(aoBase);
   Serial.print("DO NORMAL   = "); Serial.println(estadoDONormal);
   Serial.println("--------------------------------------");
   Serial.println("CALIBRACION TERMINADA");
-  ledVerde();  // Volver a verde
+  ledVerde();
+  ultimaCalibracion = millis();
 }
 
 // ============================================================
-//                  CLASIFICAR HUMO
+//                  LECTURA DHT22 CON REINTENTOS
 // ============================================================
-int obtenerNivelHumo(int cambioAO, bool humoDO) {
-  if (cambioAO >= HUMO_ALTO) return 3;
-  if (cambioAO >= HUMO_MEDIO) return 2;
-  if (cambioAO >= HUMO_BAJO) return 1;
-  if (humoDO) return 1;
-  return 0;
-}
-
-void imprimirNivelHumo(int nivelHumo) {
-  Serial.print("NIVEL HUMO  : ");
-  if (nivelHumo == 0) Serial.println("NINGUNO");
-  else if (nivelHumo == 1) Serial.println("BAJO");
-  else if (nivelHumo == 2) Serial.println("MEDIO");
-  else Serial.println("ALTO");
+bool leerDHT22(float &temp, float &hum) {
+  const int MAX_INTENTOS = 5;
+  for (int i = 0; i < MAX_INTENTOS; i++) {
+    temp = dht.readTemperature();
+    hum = dht.readHumidity();
+    if (!isnan(temp) && !isnan(hum)) {
+      return true;
+    }
+    delay(100);
+  }
+  return false;
 }
 
 // ============================================================
-//              MOSTRAR CONDICIONES
+//                    FILTRO DE PROMEDIO MÓVIL
 // ============================================================
-void mostrarCondiciones(float temp, float hum, int nivelHumo, bool humoDO) {
-  Serial.println();
-  Serial.println("-------- CONDICIONES --------");
-  if (temp >= TEMP_CRITICA) Serial.println("TEMPERATURA CRITICA");
-  else if (temp >= TEMP_ALTA) Serial.println("TEMPERATURA ALTA");
-  else if (temp >= TEMP_RIESGO) Serial.println("TEMPERATURA ELEVADA");
+void agregarMuestra(float temp, float hum) {
+  tempBuffer[indiceBuffer] = temp;
+  humBuffer[indiceBuffer] = hum;
+  indiceBuffer++;
+  if (indiceBuffer >= MUESTRAS_PROMEDIO) {
+    indiceBuffer = 0;
+    bufferLleno = true;
+  }
+}
 
-  if (hum <= HUMEDAD_CRITICA) Serial.println("HUMEDAD CRITICAMENTE BAJA");
-  else if (hum <= HUMEDAD_BAJA) Serial.println("HUMEDAD BAJA");
-  else if (hum <= HUMEDAD_RIESGO) Serial.println("HUMEDAD REDUCIDA");
+float obtenerPromedio(float* buffer) {
+  if (!bufferLleno) return buffer[0];
+  float suma = 0;
+  for (int i = 0; i < MUESTRAS_PROMEDIO; i++) {
+    suma += buffer[i];
+  }
+  return suma / MUESTRAS_PROMEDIO;
+}
 
-  if (nivelHumo == 3) Serial.println("HUMO ALTO DETECTADO");
-  else if (nivelHumo == 2) Serial.println("HUMO MEDIO DETECTADO");
-  else if (nivelHumo == 1) Serial.println("HUMO BAJO DETECTADO");
+// ============================================================
+//                  CLASIFICAR HUMO CON PERSISTENCIA
+// ============================================================
+int clasificarHumoConPersistencia(int cambioAO, bool humoDO) {
+  // Primero determinamos el nivel actual sin persistencia
+  int nivelActual = 0;
+  if (cambioAO >= HUMO_CAMBIO_ALTO || humoDO) nivelActual = 3;
+  else if (cambioAO >= HUMO_CAMBIO_MEDIO) nivelActual = 2;
+  else if (cambioAO >= HUMO_CAMBIO_BAJO) nivelActual = 1;
+  else nivelActual = 0;
 
-  if (humoDO) Serial.println("MQ-2 DIGITAL: DETECCION");
+  // Lógica de persistencia: solo cambiamos de nivel si se mantiene varias veces
+  static int ultimoNivel = 0;
+  static int contador = 0;
+
+  if (nivelActual == ultimoNivel) {
+    contador++;
+  } else {
+    contador = 1;
+    ultimoNivel = nivelActual;
+  }
+
+  if (contador >= LECTURAS_PARA_ALERTA) {
+    return nivelActual;
+  } else {
+    // Si no hemos alcanzado el número de lecturas, devolvemos el nivel anterior
+    // pero solo si ya teníamos un nivel establecido (evita falsos al inicio)
+    static int nivelEstable = 0;
+    if (contador == 1 && ultimoNivel == 0) {
+      // Reinicio: volvemos a 0 si es la primera lectura
+      nivelEstable = 0;
+    } else if (contador >= LECTURAS_PARA_ALERTA) {
+      nivelEstable = nivelActual;
+    }
+    return nivelEstable;
+  }
 }
 
 // ============================================================
 //                  EVALUAR FORESTGUARD
 // ============================================================
-void evaluarForestGuard(float temp, float hum, int nivelHumo, int cambioAO, bool humoDO) {
+void evaluarForestGuard(float temp, float hum, int nivelHumo) {
   bool tempRiesgo = temp >= TEMP_RIESGO;
   bool tempAlta = temp >= TEMP_ALTA;
   bool tempCritica = temp >= TEMP_CRITICA;
@@ -355,8 +372,21 @@ void evaluarForestGuard(float temp, float hum, int nivelHumo, int cambioAO, bool
 }
 
 // ============================================================
-//                       WIFI
+//                       WIFI + mDNS
 // ============================================================
+void resolverServidor() {
+  // Intentar resolver por mDNS
+  IPAddress ip;
+  if (MDNS.queryHost(SERVER_HOSTNAME, ip)) {
+    serverIP = ip.toString();
+    Serial.print("Servidor encontrado por mDNS: ");
+    Serial.println(serverIP);
+  } else {
+    Serial.println("No se pudo resolver por mDNS, usando IP fija de fallback.");
+    serverIP = SERVER_HOST_FALLBACK;
+  }
+}
+
 void conectarWiFi() {
   Serial.println();
   Serial.println("======================================");
@@ -379,10 +409,20 @@ void conectarWiFi() {
     stationCode = WiFi.macAddress();
     stationCode.replace(":", "");
     Serial.print("Código estación (MAC): "); Serial.println(stationCode);
-    Serial.print("Servidor Flask: "); Serial.println(serverUrl());
+
+    // Iniciar mDNS
+    if (MDNS.begin("forestguard-esp")) {
+      Serial.println("mDNS iniciado como forestguard-esp.local");
+    } else {
+      Serial.println("Error al iniciar mDNS");
+    }
+
+    // Resolver el servidor por mDNS
+    resolverServidor();
   } else {
     Serial.println("WIFI -> ERROR");
     Serial.println("El monitoreo local continuará.");
+    serverIP = SERVER_HOST_FALLBACK; // fallback
   }
 }
 
@@ -396,6 +436,10 @@ void comprobarWiFi() {
   Serial.println("Intentando reconectar...");
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // Si se reconecta, volver a resolver el servidor
+  if (WiFi.status() == WL_CONNECTED) {
+    resolverServidor();
+  }
 }
 
 // ============================================================
@@ -407,8 +451,15 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
     return;
   }
 
+  if (serverIP.length() == 0) {
+    Serial.println("No se envia: IP del servidor desconocida");
+    resolverServidor();
+    return;
+  }
+
   HTTPClient http;
-  String url = serverUrl();
+  String url = "http://" + serverIP + ":" + String(SERVER_PORT) +
+               "/api/estaciones/" + stationCode + "/datos";
   Serial.println();
   Serial.println("------ ENVIO A FLASK ------");
   Serial.print("URL: "); Serial.println(url);
@@ -426,7 +477,7 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
   doc["cambio_ao"] = cambioAO;
   doc["mq2_do"] = mq2DO;
   doc["nivel_humo"] = nivelHumo;
-  doc["mac"] = stationCode;   // Enviamos la MAC para verificar
+  doc["mac"] = stationCode;
 
   String payload;
   serializeJson(doc, payload);
@@ -444,41 +495,6 @@ void enviarDatosFlask(float temperatura, float humedad, int mq2AO, int mq2Base, 
 }
 
 // ============================================================
-//                       AUTOTEST
-// ============================================================
-void autoTest() {
-  Serial.println();
-  Serial.println("######################################");
-  Serial.println("#          FORESTGUARD ESP32         #");
-  Serial.println("#             AUTOTEST               #");
-  Serial.println("######################################");
-
-  Serial.println(); Serial.println("[1/3] PRUEBA LED RGB");
-  pruebaLED();
-
-  Serial.println(); Serial.println("[2/3] PRUEBA DHT22");
-  bool dhtOK = pruebaDHT22();
-
-  Serial.println(); Serial.println("[3/3] PRUEBA MQ-2");
-  pruebaMQ2();
-
-  Serial.println(); Serial.println("CALIBRACION MQ-2 (60 segundos con LED AZUL)");
-  calibrarMQ2();
-
-  Serial.println();
-  Serial.println("======================================");
-  Serial.println("          AUTOTEST TERMINADO");
-  Serial.println("======================================");
-  if (dhtOK) Serial.println("DHT22 -> OK");
-  else Serial.println("DHT22 -> ERROR");
-  Serial.println("MQ-2 AO -> SEÑAL RECIBIDA");
-  Serial.println("MQ-2 DO -> SEÑAL RECIBIDA");
-  Serial.println();
-  ledVerde();
-  delay(1000);
-}
-
-// ============================================================
 //                         SETUP
 // ============================================================
 void setup() {
@@ -490,14 +506,6 @@ void setup() {
   Serial.println("           FORESTGUARD");
   Serial.println("      SISTEMA DE MONITOREO");
   Serial.println("======================================");
-
-  Serial.println();
-  Serial.println("DHT22 OUT -> GPIO 13");
-  Serial.println("MQ-2 AO   -> GPIO 35");
-  Serial.println("MQ-2 DO   -> GPIO 33");
-  Serial.println("LED ROJO  -> GPIO 26");
-  Serial.println("LED VERDE -> GPIO 27");
-  Serial.println("LED AZUL  -> GPIO 25");
 
   // LED RGB
   ledcSetup(CANAL_ROJO, FRECUENCIA, RESOLUCION);
@@ -514,15 +522,25 @@ void setup() {
   // DHT22
   dht.begin();
 
-  // INICIO
-  secuenciaInicio();
-  delay(1000);
+  // Secuencia de inicio
+  ledRojo(); delay(300);
+  ledVerde(); delay(300);
+  ledAzul(); delay(300);
+  ledAmarillo(); delay(300);
+  ledNaranjo(); delay(300);
+  ledApagado();
 
-  // AUTOTEST (incluye calibración de 60 segundos con LED azul)
-  autoTest();
+  // Calibración inicial MQ-2 (30 segundos)
+  calibrarMQ2("INICIAL");
 
-  // WIFI
+  // WiFi
   conectarWiFi();
+
+  // Inicializar buffers
+  for (int i = 0; i < MUESTRAS_PROMEDIO; i++) {
+    tempBuffer[i] = 0;
+    humBuffer[i] = 0;
+  }
 
   Serial.println();
   Serial.println("======================================");
@@ -530,9 +548,8 @@ void setup() {
   Serial.println("======================================");
   Serial.println("MONITOREO ACTIVO");
   Serial.println("ENVIO A FLASK: CADA 5 SEGUNDOS");
+  Serial.println("RECALIBRACION MQ-2: CADA 10 MINUTOS");
   Serial.println();
-
-  ledVerde();
 }
 
 // ============================================================
@@ -541,46 +558,66 @@ void setup() {
 void loop() {
   comprobarWiFi();
 
+  // Recalibración periódica del MQ-2 (cada 10 minutos)
+  if (millis() - ultimaCalibracion > INTERVALO_RECALIBRACION) {
+    calibrarMQ2("RECALIBRACION PERIODICA");
+  }
+
   unsigned long tiempoActual = millis();
   if (tiempoActual - ultimaLectura < INTERVALO_LECTURA) return;
   ultimaLectura = tiempoActual;
 
-  float temp = dht.readTemperature();
-  float hum = dht.readHumidity();
+  // Lectura del DHT22 con reintentos
+  float temp, hum;
+  bool dhtOK = leerDHT22(temp, hum);
 
-  int aoActual = analogRead(MQ2_AO);
-  int doActual = digitalRead(MQ2_DO);
-
-  if (isnan(temp) || isnan(hum)) {
+  if (!dhtOK) {
     Serial.println();
     Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     Serial.println("          ERROR DHT22");
     Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    ledAzul();
+    ledParpadeoAzul();  // Parpadeo azul
     return;
   }
+
+  // Agregar al filtro de promedio móvil
+  agregarMuestra(temp, hum);
+  float tempFiltrada = obtenerPromedio(tempBuffer);
+  float humFiltrada = obtenerPromedio(humBuffer);
+
+  // Lectura MQ-2
+  int aoActual = analogRead(MQ2_AO);
+  int doActual = digitalRead(MQ2_DO);
 
   int deltaAO = aoActual - aoBase;
   int cambioAO = abs(deltaAO);
   bool humoDO = (doActual != estadoDONormal);
-  int nivelHumo = obtenerNivelHumo(cambioAO, humoDO);
 
+  // Clasificar humo con persistencia (evita falsas alarmas)
+  int nivelHumo = clasificarHumoConPersistencia(cambioAO, humoDO);
+
+  // Mostrar en serial
   Serial.println();
   Serial.println("--------------------------------------");
-  Serial.print("Temperatura : "); Serial.print(temp, 1); Serial.println(" C");
-  Serial.print("Humedad     : "); Serial.print(hum, 1); Serial.println(" %");
+  Serial.print("Temperatura : "); Serial.print(tempFiltrada, 1); Serial.println(" C");
+  Serial.print("Humedad     : "); Serial.print(humFiltrada, 1); Serial.println(" %");
   Serial.print("MQ-2 AO     : "); Serial.println(aoActual);
   Serial.print("AO BASE     : "); Serial.println(aoBase);
   Serial.print("CAMBIO AO   : "); Serial.println(cambioAO);
   Serial.print("MQ-2 DO     : "); Serial.println(doActual);
+  Serial.print("NIVEL HUMO  : ");
+  if (nivelHumo == 0) Serial.println("NINGUNO");
+  else if (nivelHumo == 1) Serial.println("BAJO");
+  else if (nivelHumo == 2) Serial.println("MEDIO");
+  else Serial.println("ALTO");
 
-  imprimirNivelHumo(nivelHumo);
-  mostrarCondiciones(temp, hum, nivelHumo, humoDO);
-  evaluarForestGuard(temp, hum, nivelHumo, cambioAO, humoDO);
+  // Evaluar riesgo y actualizar LED
+  evaluarForestGuard(tempFiltrada, humFiltrada, nivelHumo);
 
+  // Enviar a Flask cada 5 segundos
   if (tiempoActual - ultimoEnvio >= INTERVALO_ENVIO) {
     ultimoEnvio = tiempoActual;
-    enviarDatosFlask(temp, hum, aoActual, aoBase, cambioAO, doActual, nivelHumo);
+    enviarDatosFlask(tempFiltrada, humFiltrada, aoActual, aoBase, cambioAO, doActual, nivelHumo);
   }
 
   Serial.println("--------------------------------------");

@@ -38,26 +38,26 @@
 
     <div class="history-table">
         <div class="history-row history-header">
-            <span>FECHA</span>
-            <span>ZONA</span>
-            <span>TEMPERATURA</span>
-            <span>HUMEDAD</span>
-            <span>HUMO</span>
-            <span>RIESGO</span>
+            <span data-label="FECHA">FECHA</span>
+            <span data-label="ZONA">ZONA</span>
+            <span data-label="TEMPERATURA">TEMPERATURA</span>
+            <span data-label="HUMEDAD">HUMEDAD</span>
+            <span data-label="HUMO">HUMO</span>
+            <span data-label="RIESGO">RIESGO</span>
         </div>
         {% for m in mediciones %}
         <div class="history-row">
-            <span>{{ m.fecha_hora }}</span>
-            <span>{{ m.estacion }}</span>
-            <span>{{ m.temperatura if m.temperatura is not none else '—' }} °C</span>
-            <span>{{ m.humedad if m.humedad is not none else '—' }} %</span>
-            <span>{{ m.humo_nombre or '—' }}</span>
-            <span class="{% if m.nivel_riesgo == 'NORMAL' %}risk-low{% elif m.nivel_riesgo == 'RIESGO_MODERADO' %}risk-medium{% else %}risk-high{% endif %}">
+            <span data-label="FECHA">{{ m.fecha_hora }}</span>
+            <span data-label="ZONA">{{ m.estacion }}</span>
+            <span data-label="TEMPERATURA">{{ m.temperatura if m.temperatura is not none else '—' }} °C</span>
+            <span data-label="HUMEDAD">{{ m.humedad if m.humedad is not none else '—' }} %</span>
+            <span data-label="HUMO">{{ m.humo_nombre or '—' }}</span>
+            <span data-label="RIESGO" class="{% if m.nivel_riesgo == 'NORMAL' %}risk-low{% elif m.nivel_riesgo == 'RIESGO_MODERADO' %}risk-medium{% else %}risk-high{% endif %}">
                 {{ m.nivel_riesgo or 'NORMAL' }}
             </span>
         </div>
         {% else %}
-        <div class="history-row"><span colspan="6">No hay mediciones registradas.</span></div>
+        <div class="history-row"><span colspan="6" data-label="Mensaje">No hay mediciones registradas.</span></div>
         {% endfor %}
     </div>
 </div>

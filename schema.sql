@@ -307,7 +307,20 @@ CREATE TABLE eventos (
 );
 
 -- =====================================================================
--- 10. DATOS INICIALES
+-- 10. PREFERENCIAS DE USUARIO (NUEVA TABLA)
+-- =====================================================================
+
+CREATE TABLE preferencias_usuario (
+    id_preferencia INT PRIMARY KEY AUTO_INCREMENT,
+    id_usuario INT NOT NULL UNIQUE,
+    notificaciones TINYINT(1) DEFAULT 1,
+    auto_update TINYINT(1) DEFAULT 1,
+    ubicacion TINYINT(1) DEFAULT 1,
+    FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
+);
+
+-- =====================================================================
+-- 11. DATOS INICIALES
 -- =====================================================================
 
 INSERT INTO tipos_usuario (nombre, descripcion) VALUES
@@ -389,10 +402,10 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 ('humo_medio', '300', 'Cambio AO para humo medio'),
 ('humo_alto', '550', 'Cambio AO para humo alto'),
 ('offline_timeout', '90', 'Segundos sin datos para OFFLINE'),
-('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria');  -- NUEVA LÍNEA
+('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria');
 
 -- =====================================================================
--- 11. ESTACIÓN DE EJEMPLO
+-- 12. ESTACIÓN DE EJEMPLO
 -- =====================================================================
 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion) VALUES
 ('ForestGuard-01', 'FG001', 'fg_demo_key_change_me', 2, -33.4569, -70.6483, 'Estación de ejemplo');
@@ -405,7 +418,7 @@ INSERT INTO sensores (id_estacion, id_tipo_sensor, pin_gpio, canal, descripcion)
 (1, 3, 27, 'VERDE', 'LED RGB verde'),
 (1, 3, 25, 'AZUL', 'LED RGB azul');
 
--- Agregar estados de estación PENDIENTE y RECHAZADA (ejecutar después de la creación inicial)
+-- Agregar estados de estación PENDIENTE y RECHAZADA
 INSERT INTO estados_estacion (nombre, descripcion) VALUES
 ('PENDIENTE', 'Esperando aprobación'),
 ('RECHAZADA', 'Registro denegado');

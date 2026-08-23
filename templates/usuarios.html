@@ -34,11 +34,11 @@
             <tbody>
                 {% for u in usuarios %}
                 <tr>
-                    <td><strong>{{ u.nombre_usuario }}</strong></td>
-                    <td>{{ u.nombre_completo }}</td>
-                    <td>{{ u.email }}</td>
-                    <td><span class="badge-rol {{ u.tipo|lower }}">{{ u.tipo }}</span></td>
-                    <td>
+                    <td data-label="Usuario"><strong>{{ u.nombre_usuario }}</strong></td>
+                    <td data-label="Nombre">{{ u.nombre_completo }}</td>
+                    <td data-label="Email">{{ u.email }}</td>
+                    <td data-label="Rol"><span class="badge-rol {{ u.tipo|lower }}">{{ u.tipo }}</span></td>
+                    <td data-label="Estado">
                         <span class="estado-pill 
                             {% if u.estado == 'ACTIVO' %}estado-online
                             {% elif u.estado == 'BLOQUEADO' %}estado-error
@@ -46,22 +46,20 @@
                             {{ u.estado }}
                         </span>
                     </td>
-                    <td>{{ u.ultimo_acceso or 'Nunca' }}</td>
-                    <td>
-                        <div class="acciones">
-                            <a href="{{ url_for('editar_usuario', id_usuario=u.id_usuario) }}" class="btn btn-sm"><i class="fas fa-pen"></i></a>
-                            {% if u.estado == 'ACTIVO' %}
-                            <form method="POST" action="{{ url_for('cambiar_estado_usuario', id_usuario=u.id_usuario) }}" style="display:inline;">
-                                <input type="hidden" name="estado" value="BLOQUEADO">
-                                <button class="btn btn-sm btn-outline" title="Bloquear"><i class="fas fa-lock"></i></button>
-                            </form>
-                            {% else %}
-                            <form method="POST" action="{{ url_for('cambiar_estado_usuario', id_usuario=u.id_usuario) }}" style="display:inline;">
-                                <input type="hidden" name="estado" value="ACTIVO">
-                                <button class="btn btn-sm" title="Activar"><i class="fas fa-unlock"></i></button>
-                            </form>
-                            {% endif %}
-                        </div>
+                    <td data-label="Último acceso">{{ u.ultimo_acceso or 'Nunca' }}</td>
+                    <td data-label="Acciones" class="acciones">
+                        <a href="{{ url_for('editar_usuario', id_usuario=u.id_usuario) }}" class="btn btn-sm"><i class="fas fa-pen"></i></a>
+                        {% if u.estado == 'ACTIVO' %}
+                        <form method="POST" action="{{ url_for('cambiar_estado_usuario', id_usuario=u.id_usuario) }}" style="display:inline;">
+                            <input type="hidden" name="estado" value="BLOQUEADO">
+                            <button class="btn btn-sm btn-outline" title="Bloquear"><i class="fas fa-lock"></i></button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('cambiar_estado_usuario', id_usuario=u.id_usuario) }}" style="display:inline;">
+                            <input type="hidden" name="estado" value="ACTIVO">
+                            <button class="btn btn-sm" title="Activar"><i class="fas fa-unlock"></i></button>
+                        </form>
+                        {% endif %}
                     </td>
                 </tr>
                 {% else %}

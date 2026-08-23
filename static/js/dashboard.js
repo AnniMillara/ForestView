@@ -18,7 +18,6 @@ const riskElement = document.getElementById("risk");
 const lastUpdateElement = document.getElementById("lastUpdate");
 const sensorConnectionStatus = document.getElementById("sensorConnectionStatus");
 
-
 /* =========================================================
    OBTENER DATOS DE LA API
 ========================================================= */
@@ -35,7 +34,6 @@ async function fetchDashboardData() {
     }
 }
 
-
 /* =========================================================
    ACTUALIZAR DASHBOARD CON DATOS REALES
 ========================================================= */
@@ -43,18 +41,15 @@ async function fetchDashboardData() {
 function updateDashboardWithData(data) {
     if (!data || data.length === 0) return;
 
-    // Calcular estadísticas generales
     let total = data.length;
     let online = data.filter(e => e.estado === 'ONLINE').length;
     let offline = data.filter(e => e.estado === 'OFFLINE').length;
     let error = data.filter(e => e.estado === 'ERROR').length;
 
-    // Actualizar estado de conexión
     if (sensorConnectionStatus) {
         sensorConnectionStatus.textContent = `${online}/${total} estaciones conectadas`;
     }
 
-    // Buscar la última medición global (la más reciente de todas)
     let ultimaMedicion = null;
     let ultimaFecha = null;
     data.forEach(est => {
@@ -68,22 +63,18 @@ function updateDashboardWithData(data) {
     });
 
     if (ultimaMedicion) {
-        // Temperatura
         if (temperatureElement) {
             let temp = ultimaMedicion.temperatura;
             temperatureElement.textContent = temp !== null && temp !== undefined ? temp.toFixed(1) : '--';
         }
-        // Humedad
         if (humidityElement) {
             let hum = ultimaMedicion.humedad;
             humidityElement.textContent = hum !== null && hum !== undefined ? Math.round(hum) : '--';
         }
-        // Humo
         if (smokeElement) {
             let humo = ultimaMedicion.humo_nombre || 'NINGUNO';
             smokeElement.textContent = humo;
         }
-        // Riesgo (tomar el mayor nivel de alerta activa)
         let maxSeveridad = 0;
         let maxNombre = 'NORMAL';
         let maxColor = '#159447';
@@ -101,7 +92,6 @@ function updateDashboardWithData(data) {
             riskElement.textContent = maxNombre;
             riskElement.style.color = maxColor;
         }
-        // Indicador de riesgo
         const indicator = document.querySelector(".risk-indicator");
         if (indicator) {
             indicator.style.background = maxColor;
@@ -109,10 +99,8 @@ function updateDashboardWithData(data) {
         }
     }
 
-    // Actualizar hora de última actualización
     updateLastUpdate();
 
-    // Actualizar mapa (si está visible)
     if (document.getElementById('dashboardMap') && dashboardMap) {
         updateMapMarkers(dashboardMap, data);
     }
@@ -120,20 +108,15 @@ function updateDashboardWithData(data) {
         updateMapMarkers(zonesMap, data);
     }
 
-    // Actualizar alertas recientes (en dashboard)
     updateRecentAlerts(data);
-
-    // Actualizar lista de dispositivos (en dashboard)
     updateDeviceList(data);
 }
 
-
 /* =========================================================
-   ACTUALIZAR MAPA CON MARCADORES
+   ACTUALIZAR MAPA CON MARCADORES (versión mejorada)
 ========================================================= */
 
 function updateMapMarkers(map, data) {
-    // Limpiar capas existentes (excepto el tile layer)
     map.eachLayer((layer) => {
         if (layer instanceof L.Marker || layer instanceof L.Popup) {
             map.removeLayer(layer);
@@ -142,20 +125,19 @@ function updateMapMarkers(map, data) {
 
     data.forEach(est => {
         if (!est.latitud || !est.longitud) return;
-        let color = est.color_alerta || '#159447';
-        // Si no hay alerta, usar color según estado
+        let color = est.color_alerta || '#22c55e';
         if (!est.color_alerta) {
             if (est.estado === 'ONLINE') color = '#22c55e';
-            else if (est.estado === 'OFFLINE') color = '#9ca3af';
+            else if (est.estado === 'OFFLINE') color = '#94a3b8';
             else if (est.estado === 'ERROR') color = '#3b82f6';
             else color = '#f59e0b';
         }
         let icon = L.divIcon({
             className: 'forestguard-marker',
             html: `<div class="forestguard-marker-content" style="background:${color};"><i class="fa-solid fa-tree"></i></div>`,
-            iconSize: [38, 38],
-            iconAnchor: [19, 19],
-            popupAnchor: [0, -19]
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+            popupAnchor: [0, -15]
         });
         L.marker([est.latitud, est.longitud], { icon: icon })
             .addTo(map)
@@ -172,32 +154,19 @@ function updateMapMarkers(map, data) {
     });
 }
 
-
 /* =========================================================
-   ACTUALIZAR ALERTAS RECIENTES (en dashboard)
+   OTRAS FUNCIONES (sin cambios)
 ========================================================= */
 
 function updateRecentAlerts(data) {
     const container = document.querySelector('.alerts-list');
     if (!container) return;
-    // Las alertas se renderizan desde Flask, no se actualizan dinámicamente.
 }
-
-
-/* =========================================================
-   ACTUALIZAR LISTA DE DISPOSITIVOS (dashboard)
-========================================================= */
 
 function updateDeviceList(data) {
     const container = document.querySelector('.device-list');
     if (!container) return;
-    // Similar a las alertas.
 }
-
-
-/* =========================================================
-   ACTUALIZAR HORA DE ÚLTIMA ACTUALIZACIÓN
-========================================================= */
 
 function updateLastUpdate() {
     if (!lastUpdateElement) return;
@@ -208,7 +177,6 @@ function updateLastUpdate() {
     lastUpdateElement.textContent = `${hours}:${minutes}:${seconds}`;
 }
 
-
 /* =========================================================
    INICIALIZAR MAPA DASHBOARD
 ========================================================= */
@@ -218,22 +186,18 @@ function initializeDashboardMap() {
     if (!mapElement || dashboardMap) return;
 
     dashboardMap = L.map("dashboardMap").setView([-34.5, -71.0], 5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors"
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB'
     }).addTo(dashboardMap);
 
-    // Cargar datos iniciales para el mapa
     fetchDashboardData().then(data => {
         if (data) updateMapMarkers(dashboardMap, data);
     });
 
-    // Invalidar tamaño al redimensionar la ventana
     window.addEventListener('resize', () => {
         if (dashboardMap) dashboardMap.invalidateSize();
     });
 }
-
 
 /* =========================================================
    INICIALIZAR MAPA ZONAS
@@ -244,12 +208,10 @@ function initializeZonesMap() {
     if (!mapElement || zonesMap) return;
 
     zonesMap = L.map("zonesMap").setView([-34.5, -71.0], 6);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors"
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB'
     }).addTo(zonesMap);
 
-    // Agregar leyenda
     const legend = L.control({ position: "bottomright" });
     legend.onAdd = function() {
         const div = L.DomUtil.create("div", "map-legend");
@@ -263,34 +225,28 @@ function initializeZonesMap() {
     };
     legend.addTo(zonesMap);
 
-    // Cargar datos iniciales
     fetchDashboardData().then(data => {
         if (data) updateMapMarkers(zonesMap, data);
     });
 
-    // Invalidar tamaño al redimensionar
     window.addEventListener('resize', () => {
         if (zonesMap) zonesMap.invalidateSize();
     });
 }
 
-
 /* =========================================================
-   GRÁFICO - Inicializar con datos reales desde Flask
+   GRÁFICO
 ========================================================= */
 
 function initializeEnvironmentChart(historico) {
     const canvas = document.getElementById("environmentChart");
     if (!canvas) return;
-
     const ctx = canvas.getContext("2d");
 
-    // Si no hay historico, usar datos vacíos
     if (!historico || historico.length === 0) {
         historico = [];
     }
 
-    // Preparar datos
     const labels = historico.map(h => h.fecha_hora || '');
     const temps = historico.map(h => h.temperatura !== null && h.temperatura !== undefined ? h.temperatura : null);
     const hums = historico.map(h => h.humedad !== null && h.humedad !== undefined ? h.humedad : null);
@@ -335,10 +291,7 @@ function initializeEnvironmentChart(historico) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
+            interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: {
                     position: 'top',
@@ -391,29 +344,15 @@ function initializeEnvironmentChart(historico) {
     });
 }
 
-
-/* =========================================================
-   SELECTOR DE PERÍODO DEL GRÁFICO
-========================================================= */
-
 function initializeChartPeriod() {
     const chartPeriod = document.getElementById("chartPeriod");
     if (!chartPeriod) return;
-
     chartPeriod.addEventListener("change", function() {
-        const value = this.value;
-        // Recargar la página con el parámetro de rango
-        window.location.href = `/dashboard?rango=${value}`;
+        window.location.href = `/dashboard?rango=${this.value}`;
     });
 }
 
-
-/* =========================================================
-   ACTUALIZACIÓN PERIÓDICA (cada 15 segundos)
-========================================================= */
-
 function startPeriodicUpdate() {
-    // Actualizar cada 15 segundos con datos de la API
     updateInterval = setInterval(async () => {
         const data = await fetchDashboardData();
         if (data) {
@@ -422,42 +361,20 @@ function startPeriodicUpdate() {
     }, 15000);
 }
 
-
-/* =========================================================
-   INICIALIZACIÓN COMPLETA
-========================================================= */
-
 document.addEventListener("DOMContentLoaded", function() {
-
-    // Inicializar mapas
     initializeDashboardMap();
     initializeZonesMap();
-
-    // Inicializar selector de período
     initializeChartPeriod();
-
-    // Cargar datos iniciales para el dashboard
     fetchDashboardData().then(data => {
         if (data) {
             updateDashboardWithData(data);
         }
     });
-
-    // Iniciar actualización periódica
     startPeriodicUpdate();
-
-    // Actualizar la hora cada segundo
     setInterval(updateLastUpdate, 1000);
-
     console.log("ForestGuard Dashboard inicializado correctamente.");
 });
 
-
-/* =========================================================
-   FUNCIONES EXPORTADAS PARA USO DESDE PLANTILLAS
-========================================================= */
-
-// Función para inicializar el gráfico desde la plantilla
 window.initializeChart = function(historico) {
     initializeEnvironmentChart(historico);
 };
