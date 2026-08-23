@@ -216,11 +216,11 @@ def obtener_umbrales(id_estacion=None):
 def clasificar_humo(cambio_ao, umbrales):
     if cambio_ao is None:
         return None, None
-    if cambio_ao >= umbrales.get('humo_alto', 500):
+    if cambio_ao >= umbrales.get('humo_alto', 400):
         nivel = 3
-    elif cambio_ao >= umbrales.get('humo_medio', 300):
+    elif cambio_ao >= umbrales.get('humo_medio', 200):
         nivel = 2
-    elif cambio_ao >= umbrales.get('humo_bajo', 100):
+    elif cambio_ao >= umbrales.get('humo_bajo', 80):
         nivel = 1
     else:
         nivel = 0
@@ -330,28 +330,46 @@ def crear_o_actualizar_alerta(id_estacion, tipo_alerta, nivel_riesgo, titulo, de
     return nueva_id
 
 def verificar_estaciones_offline():
-    estaciones = db.get_all(
-        "SELECT id_estacion, id_estado_estacion, ultima_conexion, TIMESTAMPDIFF(SECOND, ultima_conexion, NOW()) as segundos FROM estaciones WHERE activa = 1 AND id_estado_estacion IN (%s, %s)",
-        (ESTADO_ESTACION['ONLINE'], ESTADO_ESTACION['ERROR'])
-    )
+    """Verifica estaciones que no han enviado datos y las marca OFFLINE, actualizando también sus sensores."""
+    TIMEOUT_OFFLINE = 30  # segundos sin datos para considerar OFFLINE
+    
+    estaciones = db.get_all("""
+        SELECT id_estacion, id_estado_estacion, ultima_conexion,
+               TIMESTAMPDIFF(SECOND, ultima_conexion, NOW()) as segundos
+        FROM estaciones
+        WHERE activa = 1 
+        AND id_estado_estacion IN (%s, %s, %s)
+    """, (ESTADO_ESTACION['ONLINE'], ESTADO_ESTACION['ERROR'], ESTADO_ESTACION['SIN_DATOS']))
+    
     for est in estaciones:
         if not est['ultima_conexion']:
+            if est['id_estado_estacion'] != ESTADO_ESTACION['SIN_DATOS']:
+                cambiar_estado_estacion(est['id_estacion'], 'SIN_DATOS')
+                # Poner sensores como SIN_DATOS
+                db.execute_query("""
+                    UPDATE sensores 
+                    SET id_estado_sensor = %s
+                    WHERE id_estacion = %s
+                """, (ESTADO_SENSOR['SIN_DATOS'], est['id_estacion']))
+                print(f"📡 Estación {est['id_estacion']} -> SIN_DATOS, sensores -> SIN_DATOS")
             continue
-        umbrales = obtener_umbrales(est['id_estacion'])
-        timeout = umbrales.get('offline_timeout', 90)
-        if est['segundos'] and est['segundos'] > timeout:
-            if cambiar_estado_estacion(est['id_estacion'], 'OFFLINE'):
-                registrar_evento('ESTACION_DESCONECTADA', id_estacion=est['id_estacion'], mensaje='Timeout sin datos')
+            
+        if est['segundos'] and est['segundos'] > TIMEOUT_OFFLINE:
+            if est['id_estado_estacion'] != ESTADO_ESTACION['OFFLINE']:
+                cambiar_estado_estacion(est['id_estacion'], 'OFFLINE')
+                # Poner sensores como SIN_DATOS
+                db.execute_query("""
+                    UPDATE sensores 
+                    SET id_estado_sensor = %s
+                    WHERE id_estacion = %s
+                """, (ESTADO_SENSOR['SIN_DATOS'], est['id_estacion']))
+                registrar_evento('ESTACION_DESCONECTADA', id_estacion=est['id_estacion'], 
+                               mensaje=f'Timeout sin datos ({est["segundos"]}s)')
                 crear_o_actualizar_alerta(
                     est['id_estacion'], 'ESTACION_OFFLINE', 'RIESGO_MODERADO',
                     'Estación desconectada', 'La estación dejó de reportar datos'
                 )
-        elif est['id_estado_estacion'] == ESTADO_ESTACION['ONLINE']:
-            db.execute_query("""
-                UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
-                WHERE id_estacion = %s AND id_estado_alerta = %s
-                AND id_tipo_alerta = (SELECT id_tipo_alerta FROM tipos_alerta WHERE nombre = 'ESTACION_OFFLINE')
-            """, (ESTADO_ALERTA['RESUELTA'], est['id_estacion'], ESTADO_ALERTA['ACTIVA']))
+                print(f"📡 Estación {est['id_estacion']} -> OFFLINE, sensores -> SIN_DATOS")
 
 def obtener_estacion_con_ultima_medicion(id_estacion):
     return db.get_one("""
@@ -596,6 +614,7 @@ def zonas():
 @login_required
 @admin_required
 def listar_estaciones():
+    verificar_estaciones_offline()
     estaciones = db.get_all("""
         SELECT e.*, z.nombre as zona, es.nombre as estado_nombre
         FROM estaciones e
@@ -618,6 +637,7 @@ def listar_estaciones():
 @login_required
 @admin_required
 def pendientes():
+    verificar_estaciones_offline()
     pendientes = db.get_all("""
         SELECT e.*, z.nombre as zona
         FROM estaciones e
@@ -984,6 +1004,7 @@ def marcar_falsa_alerta(id_alerta):
 @app.route('/historial')
 @login_required
 def historial():
+    verificar_estaciones_offline()
     estacion_id = request.args.get('estacion', '')
     riesgo = request.args.get('riesgo', '')
     fecha_inicio = request.args.get('fecha_inicio', '')
@@ -1030,8 +1051,9 @@ def historial():
 @app.route('/sensores')
 @login_required
 def sensores():
+    verificar_estaciones_offline()
     estaciones = db.get_all("""
-        SELECT e.id_estacion, e.nombre, e.ultima_conexion, z.nombre as zona,
+        SELECT e.id_estacion, e.nombre, e.id_estado_estacion, e.ultima_conexion, z.nombre as zona,
                es.nombre as estado_nombre,
                (SELECT temperatura FROM mediciones WHERE id_estacion = e.id_estacion ORDER BY fecha_hora DESC LIMIT 1) as ult_temp,
                (SELECT humedad FROM mediciones WHERE id_estacion = e.id_estacion ORDER BY fecha_hora DESC LIMIT 1) as ult_humedad,
@@ -1046,10 +1068,15 @@ def sensores():
         ORDER BY e.nombre
     """)
     for est in estaciones:
-        if not est.get('dht_estado'):
+        # Si la estación está OFFLINE, forzar sensores a SIN_DATOS (3)
+        if est.get('id_estado_estacion') == ESTADO_ESTACION['OFFLINE']:
             est['dht_estado'] = 'SIN_DATOS'
-        if not est.get('mq2_estado'):
             est['mq2_estado'] = 'SIN_DATOS'
+        else:
+            if not est.get('dht_estado'):
+                est['dht_estado'] = 'SIN_DATOS'
+            if not est.get('mq2_estado'):
+                est['mq2_estado'] = 'SIN_DATOS'
     return render_template('sensores.html',
         page="sensores",
         title="Sensores",
@@ -1065,7 +1092,6 @@ def sensores():
 @login_required
 def configuracion():
     """Página de configuración personal para cada usuario."""
-    # Cargar preferencias desde la base de datos
     prefs = cargar_preferencias_usuario(session['usuario_id'])
     
     if request.method == 'POST':
@@ -1073,10 +1099,8 @@ def configuracion():
         auto_update = 'auto_update' in request.form
         ubicacion = 'ubicacion' in request.form
         
-        # Guardar en base de datos
         guardar_preferencias_usuario(session['usuario_id'], notificaciones, auto_update, ubicacion)
         
-        # Actualizar sesión
         session['notificaciones'] = notificaciones
         session['auto_update'] = auto_update
         session['ubicacion'] = ubicacion
@@ -1085,7 +1109,6 @@ def configuracion():
         flash('Preferencias guardadas correctamente', 'success')
         return redirect(url_for('configuracion'))
     
-    # Si no hay preferencias en sesión, cargarlas desde BD
     if 'notificaciones' not in session:
         session['notificaciones'] = prefs['notificaciones']
         session['auto_update'] = prefs['auto_update']
@@ -1112,6 +1135,7 @@ def configuracion():
 @login_required
 @admin_required
 def usuarios():
+    verificar_estaciones_offline()
     filas = db.get_all("""
         SELECT u.*, t.nombre as tipo, eu.nombre as estado
         FROM usuarios u
@@ -1244,6 +1268,7 @@ def ayuda():
 @login_required
 @admin_required
 def admin():
+    verificar_estaciones_offline()
     total_estaciones = db.get_one("SELECT COUNT(*) as total FROM estaciones WHERE activa=1")['total']
     online = db.get_one("SELECT COUNT(*) as total FROM estaciones WHERE id_estado_estacion = %s", (ESTADO_ESTACION['ONLINE'],))['total']
     offline = db.get_one("SELECT COUNT(*) as total FROM estaciones WHERE id_estado_estacion = %s", (ESTADO_ESTACION['OFFLINE'],))['total']
@@ -1293,7 +1318,7 @@ def api_recibir_datos(codigo):
             estacion = db.get_one("SELECT * FROM estaciones WHERE codigo = %s", (codigo,))
             if not estacion:
                 return jsonify({'error': 'No se pudo recuperar la estación registrada'}), 500
-            print(f"✅ Estación registrada automáticamente (pendiente): {codigo} con API key {data['api_key']}")
+            print(f"✅ Estación registrada automáticamente (pendiente): {codigo}")
             registrar_evento('CONFIGURACION_CAMBIADA', id_estacion=estacion['id_estacion'],
                             mensaje=f"Estación auto-registrada {codigo} (pendiente)")
         except Exception as e:
@@ -1353,25 +1378,36 @@ def api_recibir_datos(codigo):
 
     hubo_error_sensor = not dht_ok or not mq2_ok
 
-    db.execute_query("UPDATE estaciones SET ultima_conexion = NOW(), ip = %s WHERE id_estacion = %s", (request.remote_addr, id_estacion))
-    db.execute_query("INSERT INTO historial_conexiones (id_estacion, ip) VALUES (%s, %s)", (id_estacion, request.remote_addr))
-
+    # ---- ACTUALIZAR CONEXIÓN Y ESTADO ----
+    db.execute_query("""
+        UPDATE estaciones 
+        SET ultima_conexion = NOW(), 
+            ip = %s,
+            id_estado_estacion = %s
+        WHERE id_estacion = %s
+    """, (request.remote_addr, ESTADO_ESTACION['ONLINE'], id_estacion))
+    
     if hubo_error_sensor:
-        cambiar_estado_estacion(id_estacion, 'ERROR')
+        db.execute_query("""
+            UPDATE estaciones 
+            SET id_estado_estacion = %s
+            WHERE id_estacion = %s
+        """, (ESTADO_ESTACION['ERROR'], id_estacion))
         crear_o_actualizar_alerta(
             id_estacion, 'SENSOR_ERROR', 'RIESGO_MODERADO',
             'Error de sensor', f"DHT22 {'OK' if dht_ok else 'ERROR'}, MQ-2 {'OK' if mq2_ok else 'ERROR'}",
             id_medicion=id_medicion
         )
-    else:
-        cambio = cambiar_estado_estacion(id_estacion, 'ONLINE')
-        if cambio:
-            registrar_evento('ESTACION_CONECTADA', id_estacion=id_estacion, mensaje='Estación ONLINE')
-            db.execute_query("""
-                UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
-                WHERE id_estacion = %s AND id_estado_alerta = %s
-                AND id_tipo_alerta = (SELECT id_tipo_alerta FROM tipos_alerta WHERE nombre = 'ESTACION_OFFLINE')
-            """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
+    
+    # Resolver alerta de OFFLINE
+    db.execute_query("""
+        UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
+        WHERE id_estacion = %s AND id_estado_alerta = %s
+        AND id_tipo_alerta = (SELECT id_tipo_alerta FROM tipos_alerta WHERE nombre = 'ESTACION_OFFLINE')
+    """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
+    
+    if estacion.get('id_estado_estacion') in [ESTADO_ESTACION['OFFLINE'], ESTADO_ESTACION['SIN_DATOS']]:
+        registrar_evento('ESTACION_CONECTADA', id_estacion=id_estacion, mensaje='Estación ONLINE')
 
     respuesta_riesgo = 'SIN_EVALUAR'
     if not hubo_error_sensor:

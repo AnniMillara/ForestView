@@ -42,18 +42,20 @@
 
     <div class="panel">
         <h3><i class="fas fa-microchip"></i> Estado de sensores</h3>
-        <table class="table table-compact">
-            <thead><tr><th>Sensor</th><th>Estado</th><th>Pin</th></tr></thead>
-            <tbody>
-            {% for s in sensores %}
-            <tr>
-                <td>{{ s.tipo }}</td>
-                <td><span class="estado-pill estado-sensor-{{ s.estado|lower }}">{{ s.estado }}</span></td>
-                <td>{{ s.pin_gpio if s.pin_gpio else s.canal }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-wrapper">
+            <table class="table table-compact">
+                <thead><tr><th>Sensor</th><th>Estado</th><th>Pin</th></tr></thead>
+                <tbody>
+                {% for s in sensores %}
+                <tr>
+                    <td data-label="Sensor">{{ s.tipo }}</td>
+                    <td data-label="Estado"><span class="estado-pill estado-sensor-{{ s.estado|lower }}">{{ s.estado }}</span></td>
+                    <td data-label="Pin">{{ s.pin_gpio if s.pin_gpio else s.canal }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <div class="panel">
@@ -66,28 +68,32 @@
 <canvas id="chartHistorico" height="90"></canvas>
 
 <h2 class="section-title"><i class="fas fa-triangle-exclamation"></i> Alertas de esta estación</h2>
-<table class="table">
-    <thead><tr><th>ID</th><th>Tipo</th><th>Nivel</th><th>Estado</th><th>Fecha</th></tr></thead>
-    <tbody>
-    {% for a in alertas %}
-    <tr>
-        <td>#{{ a.id_alerta }}</td>
-        <td>{{ a.tipo }}</td>
-        <td>{{ a.nivel }}</td>
-        <td>{{ a.estado }}</td>
-        <td>{{ a.fecha_creacion }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5" class="empty-state">Sin alertas registradas</td></tr>
-    {% endfor %}
-    </tbody>
-</table>
+<div class="table-wrapper">
+    <table class="table">
+        <thead><tr><th>ID</th><th>Tipo</th><th>Nivel</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <tbody>
+        {% for a in alertas %}
+        <tr>
+            <td data-label="ID">#{{ a.id_alerta }}</td>
+            <td data-label="Tipo">{{ a.tipo }}</td>
+            <td data-label="Nivel">{{ a.nivel }}</td>
+            <td data-label="Estado">{{ a.estado }}</td>
+            <td data-label="Fecha">{{ a.fecha_creacion }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty-state">Sin alertas registradas</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
     const mapEst = L.map('map-estacion').setView([{{ estacion.latitud }}, {{ estacion.longitud }}], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(mapEst);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB'
+    }).addTo(mapEst);
     L.marker([{{ estacion.latitud }}, {{ estacion.longitud }}]).addTo(mapEst).bindPopup("{{ estacion.nombre }}");
 
     const historico = {{ historico|tojson }};
