@@ -123,7 +123,6 @@
         background: #fef9e7;
         color: #d97706;
     }
-    /* Para sensores */
     .estado-pill.estado-sensor-activo {
         background: #eaf8ef;
         color: #159447;
@@ -140,14 +139,9 @@
 
 <script>
     function selectStation(element) {
-        // Remover clase 'selected' de todas las tarjetas
-        document.querySelectorAll('.sensor-card').forEach(card => {
-            card.classList.remove('selected');
-        });
-        // Agregar clase 'selected' a la tarjeta clickeada
+        document.querySelectorAll('.sensor-card').forEach(card => card.classList.remove('selected'));
         element.classList.add('selected');
 
-        // Obtener los datos de la estación desde el atributo data-station
         let stationData;
         try {
             stationData = JSON.parse(element.dataset.station);
@@ -156,35 +150,27 @@
             return;
         }
 
-        // Actualizar nombre de la estación seleccionada
         const nameSpan = document.getElementById('selectedStationName');
         if (nameSpan) {
             nameSpan.textContent = '— ' + (stationData.nombre || 'Sin nombre');
         }
 
-        // --- ESP32 (Estado de la estación) ---
         const esp32Status = document.getElementById('status-esp32');
         const estadoNombre = stationData.estado_nombre || 'SIN_DATOS';
         esp32Status.textContent = estadoNombre;
         esp32Status.className = 'estado-pill estado-' + estadoNombre.toLowerCase();
 
-        // --- DHT22 ---
         const dhtStatus = document.getElementById('status-dht');
         const dhtEstado = stationData.dht_estado || 'SIN_DATOS';
         dhtStatus.textContent = dhtEstado;
         dhtStatus.className = 'estado-pill estado-sensor-' + dhtEstado.toLowerCase();
 
-        // --- MQ-2 ---
         const mq2Status = document.getElementById('status-mq2');
         const mq2Estado = stationData.mq2_estado || 'SIN_DATOS';
         mq2Status.textContent = mq2Estado;
         mq2Status.className = 'estado-pill estado-sensor-' + mq2Estado.toLowerCase();
-
-        // También podemos actualizar el estado de los valores en la tarjeta, pero ya están.
-        console.log(`Estación seleccionada: ${stationData.nombre} | ESP32: ${estadoNombre} | DHT22: ${dhtEstado} | MQ-2: ${mq2Estado}`);
     }
 
-    // Al cargar la página, seleccionar la primera estación automáticamente
     document.addEventListener('DOMContentLoaded', function() {
         const firstCard = document.querySelector('.sensor-card');
         if (firstCard) {

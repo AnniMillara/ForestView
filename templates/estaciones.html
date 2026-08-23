@@ -44,6 +44,9 @@
                 <form method="POST" action="{{ url_for('desconectar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;" onsubmit="return confirm('¿Desconectar esta estación?');">
                     <button class="btn btn-sm btn-outline"><i class="fas fa-power-off"></i></button>
                 </form>
+                <form method="POST" action="{{ url_for('eliminar_estacion', id_estacion=est.id_estacion) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar esta estación? Se resolverán sus alertas.');">
+                    <button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
+                </form>
                 <form method="POST" action="{{ url_for('regenerar_api_key', id_estacion=est.id_estacion) }}" style="display:inline;">
                     <button class="btn btn-sm btn-outline" title="Regenerar API key"><i class="fas fa-key"></i></button>
                 </form>

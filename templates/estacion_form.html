@@ -24,6 +24,12 @@
         <div><label>Latitud</label><input type="text" name="latitud" value="{{ estacion.latitud if estacion else '' }}" placeholder="-33.456789"></div>
         <div><label>Longitud</label><input type="text" name="longitud" value="{{ estacion.longitud if estacion else '' }}" placeholder="-70.123456"></div>
         <div><label>Descripción</label><textarea name="descripcion" rows="2">{{ estacion.descripcion if estacion else '' }}</textarea></div>
+        {% if estacion %}
+        <div style="display:flex;align-items:center;gap:10px;">
+            <label for="activa" style="margin:0;">Estación activa</label>
+            <input type="checkbox" id="activa" name="activa" {% if estacion.activa %}checked{% endif %}>
+        </div>
+        {% endif %}
     </div>
     <button type="submit" class="btn"><i class="fas fa-save"></i> Guardar</button>
     <a href="{{ url_for('listar_estaciones') }}" class="btn btn-outline">Cancelar</a>

@@ -73,51 +73,93 @@ def inject_alertas_count():
     return {'alertas_activas_count': 0}
 
 # =====================================================================
-# INICIALIZACIÓN
+# INICIALIZACIÓN (mejorada)
 # =====================================================================
 def init_db():
-    admin = db.get_one("SELECT id_usuario FROM usuarios WHERE nombre_usuario = %s", ('admin',))
-    if not admin:
+    """Crea/actualiza usuarios por defecto. Garantiza que admin exista y esté activo."""
+    # ---------- ADMIN ----------
+    admin = db.get_one(
+        "SELECT id_usuario, contrasena_hash, id_estado_usuario FROM usuarios WHERE nombre_usuario = %s",
+        ('admin',)
+    )
+    if admin:
+        if not check_password_hash(admin['contrasena_hash'], 'admin123'):
+            new_hash = generate_password_hash('admin123')
+            db.execute_query(
+                "UPDATE usuarios SET contrasena_hash = %s WHERE id_usuario = %s",
+                (new_hash, admin['id_usuario'])
+            )
+            print("✅ Contraseña de admin restablecida a 'admin123'")
+        if admin['id_estado_usuario'] != 1:
+            db.execute_query(
+                "UPDATE usuarios SET id_estado_usuario = 1 WHERE id_usuario = %s",
+                (admin['id_usuario'],)
+            )
+            print("✅ Estado de admin activado")
+    else:
         hash_pass = generate_password_hash('admin123')
         db.execute_query("""
             INSERT INTO usuarios (nombre_usuario, contrasena_hash, email, nombre_completo, id_tipo_usuario)
             VALUES (%s, %s, %s, %s, %s)
         """, ('admin', hash_pass, 'admin@forestguard.com', 'Administrador', 1))
-        print("Usuario admin creado (admin / admin123)")
+        print("✅ Usuario admin creado (admin / admin123)")
 
+    # ---------- USUARIOS DE PRUEBA ----------
     prueba = [
         ('bombero', 'bombero123', 'bombero@forestguard.com', 'Bombero Test', 2),
         ('operador', 'operador123', 'operador@forestguard.com', 'Operador Test', 3),
         ('observador', 'observador123', 'observador@forestguard.com', 'Observador Test', 4)
     ]
     for user, pwd, email, nombre, tipo in prueba:
-        if not db.get_one("SELECT id_usuario FROM usuarios WHERE nombre_usuario = %s", (user,)):
+        usuario = db.get_one(
+            "SELECT id_usuario, contrasena_hash, id_estado_usuario FROM usuarios WHERE nombre_usuario = %s",
+            (user,)
+        )
+        if usuario:
+            if not check_password_hash(usuario['contrasena_hash'], pwd):
+                new_hash = generate_password_hash(pwd)
+                db.execute_query(
+                    "UPDATE usuarios SET contrasena_hash = %s WHERE id_usuario = %s",
+                    (new_hash, usuario['id_usuario'])
+                )
+                print(f"✅ Contraseña de {user} restablecida a '{pwd}'")
+            if usuario['id_estado_usuario'] != 1:
+                db.execute_query(
+                    "UPDATE usuarios SET id_estado_usuario = 1 WHERE id_usuario = %s",
+                    (usuario['id_usuario'],)
+                )
+                print(f"✅ Estado de {user} activado")
+        else:
             hash_pass = generate_password_hash(pwd)
             db.execute_query("""
                 INSERT INTO usuarios (nombre_usuario, contrasena_hash, email, nombre_completo, id_tipo_usuario)
                 VALUES (%s, %s, %s, %s, %s)
             """, (user, hash_pass, email, nombre, tipo))
-            print(f"Usuario {user} creado ({user} / {pwd})")
+            print(f"✅ Usuario {user} creado ({user} / {pwd})")
 
+    # ---------- AJUSTES DE TABLA ----------
     try:
         db.execute_query("ALTER TABLE estaciones MODIFY latitud DECIMAL(10,8) NULL")
         db.execute_query("ALTER TABLE estaciones MODIFY longitud DECIMAL(11,8) NULL")
-        print("✅ Tabla estaciones actualizada")
+        print("✅ Tabla estaciones actualizada: latitud y longitud aceptan NULL")
     except Exception as e:
-        print(f"⚠️ No se pudo modificar la tabla: {e}")
+        print(f"⚠️ No se pudo modificar la tabla (quizás ya está): {e}")
 
     if not db.get_one("SELECT clave FROM configuracion WHERE clave = 'radio_alerta'"):
-        db.execute_query("INSERT INTO configuracion (clave, valor, descripcion) VALUES ('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria')")
+        db.execute_query("""
+            INSERT INTO configuracion (clave, valor, descripcion)
+            VALUES ('radio_alerta', '5', 'Radio en kilómetros para alerta prioritaria')
+        """)
 
     for nombre, desc in [('PENDIENTE', 'Esperando aprobación'), ('RECHAZADA', 'Registro denegado')]:
         if not db.get_one("SELECT id_estado_estacion FROM estados_estacion WHERE nombre = %s", (nombre,)):
             db.execute_query("INSERT INTO estados_estacion (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
             print(f"✅ Estado '{nombre}' agregado.")
 
-    # Crear tipos de sensor si no existen (DHT22 y MQ-2)
-    for nombre in ['DHT22', 'MQ-2']:
+    # Asegurar tipos de sensor
+    for nombre, desc in [('DHT22', 'Temperatura y humedad'), ('MQ-2', 'Sensor de gases/humo'), ('LED_RGB', 'Indicador visual')]:
         if not db.get_one("SELECT id_tipo_sensor FROM tipos_sensor WHERE nombre = %s", (nombre,)):
-            db.execute_query("INSERT INTO tipos_sensor (nombre, descripcion) VALUES (%s, %s)", (nombre, f'Sensor {nombre}'))
+            db.execute_query("INSERT INTO tipos_sensor (nombre, descripcion) VALUES (%s, %s)", (nombre, desc))
             print(f"✅ Tipo sensor '{nombre}' agregado.")
 
 # =====================================================================
@@ -166,7 +208,6 @@ def evaluar_riesgo(temp, hum, nivel_humo, umbrales):
     riesgoAlto = False
     riesgoModerado = False
 
-    # ALERTA MÁXIMA
     if nivel_humo == 3:
         alertaMaxima = True
     elif nivel_humo == 2 and tempAlta:
@@ -182,7 +223,6 @@ def evaluar_riesgo(temp, hum, nivel_humo, umbrales):
     elif nivel_humo >= 1 and tempAlta and humBaja:
         alertaMaxima = True
 
-    # RIESGO ALTO
     if not alertaMaxima:
         if nivel_humo == 2:
             riesgoAlto = True
@@ -193,7 +233,6 @@ def evaluar_riesgo(temp, hum, nivel_humo, umbrales):
         elif tempAlta and humBaja:
             riesgoAlto = True
 
-    # RIESGO MODERADO
     if not alertaMaxima and not riesgoAlto:
         if nivel_humo == 1:
             riesgoModerado = True
@@ -315,19 +354,16 @@ def mapear_nivel_humo_a_id(nivel):
     return fila['id_tipo_humo'] if fila else None
 
 def crear_sensores_estacion(id_estacion):
-    """Crea los sensores DHT22 y MQ-2 para una estación si no existen."""
     tipos = {
         'DHT22': {'id_tipo': 1, 'pin': 13, 'canal': 'DATA', 'desc': 'DHT22'},
         'MQ-2': {'id_tipo': 2, 'pin': 35, 'canal': 'AO', 'desc': 'MQ-2 analógico'}
     }
     for nombre, datos in tipos.items():
-        # Verificar si ya existe un sensor de ese tipo para la estación
         existente = db.get_one(
             "SELECT id_sensor FROM sensores WHERE id_estacion = %s AND id_tipo_sensor = %s",
             (id_estacion, datos['id_tipo'])
         )
         if not existente:
-            # Insertar el sensor con estado SIN_DATOS (3)
             db.execute_query("""
                 INSERT INTO sensores (id_estacion, id_tipo_sensor, id_estado_sensor, pin_gpio, canal, descripcion)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -335,11 +371,12 @@ def crear_sensores_estacion(id_estacion):
             print(f"✅ Sensor {nombre} creado para estación {id_estacion}")
 
 # =====================================================================
-# RUTAS PÚBLICAS
+# RUTAS PÚBLICAS (login, registro, raíz)
 # =====================================================================
 @app.route('/')
 def index():
-    return redirect(url_for('dashboard') if 'usuario_id' in session else url_for('login'))
+    # Redirige siempre al login
+    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -369,6 +406,46 @@ def login():
             registrar_evento('LOGIN', id_usuario=user['id_usuario'], mensaje=f"Inicio de sesión de {usuario}")
             return redirect(url_for('dashboard'))
     return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        nombre_usuario = request.form.get('nombre_usuario', '').strip()
+        email = request.form.get('email', '').strip()
+        nombre_completo = request.form.get('nombre_completo', '').strip()
+        contrasena = request.form.get('contrasena', '')
+        confirmar = request.form.get('confirmar', '')
+
+        # Validaciones
+        if not nombre_usuario or not email or not contrasena or not confirmar:
+            flash('Todos los campos son obligatorios', 'danger')
+            return redirect(url_for('register'))
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            flash('Email inválido', 'danger')
+            return redirect(url_for('register'))
+        if contrasena != confirmar:
+            flash('Las contraseñas no coinciden', 'danger')
+            return redirect(url_for('register'))
+        if len(contrasena) < 6:
+            flash('La contraseña debe tener al menos 6 caracteres', 'danger')
+            return redirect(url_for('register'))
+        if db.get_one("SELECT id_usuario FROM usuarios WHERE nombre_usuario = %s", (nombre_usuario,)):
+            flash('El nombre de usuario ya existe', 'danger')
+            return redirect(url_for('register'))
+        if db.get_one("SELECT id_usuario FROM usuarios WHERE email = %s", (email,)):
+            flash('El email ya está registrado', 'danger')
+            return redirect(url_for('register'))
+
+        # Crear usuario con rol OBSERVADOR (4) por defecto
+        hash_pass = generate_password_hash(contrasena)
+        db.execute_query("""
+            INSERT INTO usuarios (nombre_usuario, contrasena_hash, email, nombre_completo, id_tipo_usuario)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (nombre_usuario, hash_pass, email, nombre_completo, 4))  # 4 = OBSERVADOR
+
+        flash('Registro exitoso. Ya puedes iniciar sesión.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
 @app.route('/logout')
 def logout():
@@ -529,12 +606,12 @@ def aprobar_estacion(id_estacion):
     if not est:
         flash('Estación no encontrada', 'danger')
         return redirect(url_for('pendientes'))
-    # Activar y poner ONLINE
+    # Cambiar a ONLINE y activa=1
     db.execute_query("""
         UPDATE estaciones SET activa = 1, id_estado_estacion = %s
         WHERE id_estacion = %s
     """, (ESTADO_ESTACION['ONLINE'], id_estacion))
-    # Asegurar que los sensores existan
+    # Crear sensores
     crear_sensores_estacion(id_estacion)
     registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} aprobada")
     flash('Estación aprobada correctamente', 'success')
@@ -562,7 +639,7 @@ def desconectar_estacion(id_estacion):
     if est:
         db.execute_query("UPDATE estaciones SET activa = 0, id_estado_estacion = %s WHERE id_estacion = %s",
                          (ESTADO_ESTACION['OFFLINE'], id_estacion))
-        # Resolver alertas activas de esta estación
+        # Resolver alertas activas
         db.execute_query("""
             UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
             WHERE id_estacion = %s AND id_estado_alerta = %s
@@ -581,7 +658,6 @@ def reactivar_estacion(id_estacion):
     if est:
         db.execute_query("UPDATE estaciones SET activa = 1, id_estado_estacion = %s WHERE id_estacion = %s",
                          (ESTADO_ESTACION['ONLINE'], id_estacion))
-        # Asegurar sensores
         crear_sensores_estacion(id_estacion)
         registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {est['nombre']} reactivada")
         flash('Estación reactivada', 'success')
@@ -619,7 +695,6 @@ def nueva_estacion():
                 INSERT INTO estaciones (nombre, codigo, api_key, id_zona, latitud, longitud, descripcion, activa, id_estado_estacion)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s)
             """, (nombre, codigo, api_key, id_zona or None, latitud, longitud, descripcion, ESTADO_ESTACION['ONLINE']))
-            # Obtener el ID de la nueva estación
             nueva_est = db.get_one("SELECT id_estacion FROM estaciones WHERE codigo = %s", (codigo,))
             if nueva_est:
                 crear_sensores_estacion(nueva_est['id_estacion'])
@@ -663,7 +738,6 @@ def editar_estacion(id_estacion):
                 WHERE id_estacion=%s
             """, (nombre, codigo, id_zona or None, latitud or None, longitud or None, 
                   descripcion, activa, api_key, id_estacion))
-            # Si se activó, asegurar sensores
             if activa:
                 crear_sensores_estacion(id_estacion)
             flash('Estación actualizada', 'success')
@@ -687,12 +761,12 @@ def editar_estacion(id_estacion):
 def eliminar_estacion(id_estacion):
     estacion = db.get_one("SELECT nombre FROM estaciones WHERE id_estacion = %s", (id_estacion,))
     if estacion:
-        # Resolver TODAS las alertas activas de esta estación
+        # Resolver TODAS las alertas activas
         db.execute_query("""
             UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
             WHERE id_estacion = %s AND id_estado_alerta = %s
         """, (ESTADO_ALERTA['RESUELTA'], id_estacion, ESTADO_ALERTA['ACTIVA']))
-        # Luego desactivar la estación
+        # Desactivar
         db.execute_query("UPDATE estaciones SET activa = 0 WHERE id_estacion = %s", (id_estacion,))
         registrar_evento('CONFIGURACION_CAMBIADA', id_usuario=session['usuario_id'], mensaje=f"Estación {estacion['nombre']} eliminada y alertas resueltas")
         flash('Estación desactivada y sus alertas resueltas.', 'success')
@@ -1210,7 +1284,7 @@ def api_recibir_datos(codigo):
 
     registrar_evento('LECTURA_RECIBIDA', id_estacion=id_estacion, mensaje='Medición recibida')
 
-    # Asegurar que los sensores existen
+    # Asegurar sensores
     crear_sensores_estacion(id_estacion)
 
     def actualizar_estado_sensor(id_tipo, ok):
@@ -1227,11 +1301,10 @@ def api_recibir_datos(codigo):
 
     hubo_error_sensor = not dht_ok or not mq2_ok
 
-    # Actualizar última conexión y IP
     db.execute_query("UPDATE estaciones SET ultima_conexion = NOW(), ip = %s WHERE id_estacion = %s", (request.remote_addr, id_estacion))
     db.execute_query("INSERT INTO historial_conexiones (id_estacion, ip) VALUES (%s, %s)", (id_estacion, request.remote_addr))
 
-    # Cambiar estado de la estación según el estado de los sensores
+    # Cambiar estado de la estación
     if hubo_error_sensor:
         cambiar_estado_estacion(id_estacion, 'ERROR')
         crear_o_actualizar_alerta(
