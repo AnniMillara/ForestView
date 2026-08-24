@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if usuario else 'Nuevo' }} usuario{% endblock %}
+{% block page_title %}{{ 'Editar' if usuario else 'Nuevo' }} usuario{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <span>ADMINISTRACIÓN</span>
+    <h2>{{ 'Editar' if usuario else 'Nuevo' }} usuario</h2>
+    <p>{{ 'Modifica los datos del usuario.' if usuario else 'Crea un nuevo usuario en el sistema.' }}</p>
+</div>
+
+<div class="panel">
+    <form method="POST">
+        <div class="form-grid">
+            <div>
+                <label>Nombre de usuario *</label>
+                <input type="text" name="nombre_usuario" value="{{ usuario.nombre_usuario if usuario else '' }}" {% if usuario %}readonly{% endif %} required>
+                <small style="color:#718078;font-size:8px;">{% if usuario %}No se puede cambiar el nombre de usuario.{% endif %}</small>
+            </div>
+            <div>
+                <label>Email *</label>
+                <input type="email" name="email" value="{{ usuario.email if usuario else '' }}" required>
+            </div>
+            <div>
+                <label>Nombre completo *</label>
+                <input type="text" name="nombre_completo" value="{{ usuario.nombre_completo if usuario else '' }}" required>
+            </div>
+            <div>
+                <label>Rol *</label>
+                <select name="id_tipo_usuario" required>
+                    {% for tipo in tipos %}
+                    <option value="{{ tipo.id_tipo_usuario }}" {% if usuario and usuario.id_tipo_usuario == tipo.id_tipo_usuario %}selected{% endif %}>
+                        {{ tipo.nombre }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Contraseña {% if usuario %}(dejar en blanco para no cambiar){% else %}*{% endif %}</label>
+                <input type="password" name="contrasena" placeholder="{% if usuario %}Nueva contraseña{% else %}Mínimo 6 caracteres{% endif %}" {% if not usuario %}required{% endif %}>
+            </div>
+        </div>
+        <div style="margin-top:20px; display:flex; gap:10px;">
+            <button type="submit" class="btn"><i class="fas fa-save"></i> Guardar</button>
+            <a href="{{ url_for('usuarios') }}" class="btn btn-outline">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

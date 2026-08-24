@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ForestGuard | {% block title %}Dashboard{% endblock %}</title>
+    <title>ForestView | {% block title %}Dashboard{% endblock %}</title>
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,6 +28,27 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
+        /* =========================================================
+           OCULTAR SCROLLBAR DEL SIDEBAR (sin perder funcionalidad)
+        ========================================================= */
+        .sidebar,
+        .sidebar-menu,
+        .sidebar-bottom {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .sidebar::-webkit-scrollbar,
+        .sidebar-menu::-webkit-scrollbar,
+        .sidebar-bottom::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Asegurar que el scroll siga funcionando (oculto) */
+        .sidebar-menu {
+            overflow-y: auto;
+        }
+
         /* Modal de notificaciones */
         .modal {
             display: none;
