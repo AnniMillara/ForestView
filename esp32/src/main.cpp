@@ -1,90 +1,120 @@
+Monitoreo forestal
+Supervisa las condiciones ambientales y detecta posibles riesgos en tiempo real.
+
+Sistema operativo
+0/2 estaciones conectadas
+Temperatura
+--
+°C
+ Sin datos
+Humedad
+--
+%
+ Sin datos
+Nivel de humo
+--
+nivel
+ Sin datos
+Nivel de riesgo
+NORMAL
+Todos los parámetros normales
+MONITOREO
+Condiciones ambientales
+
+Últimas 24 horas
+UBICACIÓN
+Zonas monitoreadas
++
+−
+ Leaflet | © OpenStreetMap, © CartoDB
+ALERTAS
+Alertas recientes
+Ver todas
+Sin alertas activas
+Todos los parámetros normales
+DISPOSITIVOS
+Estado de sensores
+Auto-TEST123
+Sin zona
+SIN_DATOS
+ForestGuard-01
+Zona Centro// =============================================================
+//               FORESTGUARD ESP32 - FIRMWARE v2.2
+//         Con descubrimiento automático de servidor + robustez
 // =============================================================
-//               FORESTGUARD ESP32 - FIRMWARE v2.0
-//               Robusto, con calibración y filtrado
-// =============================================================
-//  Hardware: ESP32 + DHT11 + MQ-2 + LED RGB
+//  Hardware: ESP32 + DHT22 + MQ-2 + LED RGB
 //  Backend: Flask + MySQL
 // =============================================================
-//  Pines:
-//    DHT11    -> GPIO 13
-//    MQ-2 AO  -> GPIO 35   (analógico, opcional)
-//    MQ-2 DO  -> GPIO 27   (digital, obligatorio)
-//    LED ROJO -> GPIO 25
-//    LED VERDE-> GPIO 26
-//    LED AZUL -> GPIO 33
-// =============================================================
-//  Estados:
-//    🔵 AZUL FIJO      = Calentamiento / Calibración
-//    🟢 VERDE          = NORMAL
-//    🟡 AMARILLO       = RIESGO MODERADO
-//    🔴 ROJO           = ALERTA MÁXIMA
-//    🔵 AZUL PARPADEO  = ERROR DE SENSOR
+//  Pines definitivos:
+//    DHT22    -> GPIO 13
+//    MQ-2 AO  -> GPIO 35   (analógico)
+//    MQ-2 DO  -> GPIO 33   (digital)
+//    LED ROJO -> GPIO 26
+//    LED VERDE-> GPIO 27
+//    LED AZUL -> GPIO 25
 // =============================================================
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
+#include <WiFiUdp.h>
+#include <string.h>   // para strlen (por si acaso)
 
 // =============================================================
-//  PINES (MANTENER)
+//  WIFI
 // =============================================================
-#define DHT_PIN     13
-#define DHT_TYPE    DHT22          // Cambiado a DHT11
-#define MQ2_AO      35
-#define MQ2_DO      27
-#define LED_ROJO    25
-#define LED_VERDE   26
-#define LED_AZUL    33
+const char* WIFI_SSID     = "b3ar";
+const char* WIFI_PASSWORD = "papyrusB3st";
 
-// =============================================================
-//  WIFI Y SERVIDOR
-// =============================================================
-const char* WIFI_SSID       = "b3ar";
-const char* WIFI_PASSWORD   = "papyrusB3st";
-const char* SERVER_IP       = "172.16.50.57";
+// IP del servidor (se sobrescribirá con descubrimiento automático)
+String SERVER_IP = "172.16.50.57";  // valor por defecto
 const int   SERVER_PORT     = 5000;
 const char* DEFAULT_API_KEY = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
 
 // =============================================================
-//  PWM LED (canales y resolución)
+//  PINES (CORREGIDOS)
+// =============================================================
+#define DHT_PIN     13
+#define DHT_TYPE    DHT22
+#define MQ2_AO      35
+#define MQ2_DO      33
+#define LED_ROJO    26
+#define LED_VERDE   27
+#define LED_AZUL    25
+
+// =============================================================
+//  PWM LED
 // =============================================================
 const int FRECUENCIA  = 5000;
 const int RESOLUCION  = 8;
-const int CANAL_ROJO  = 0;
-const int CANAL_VERDE = 1;
-const int CANAL_AZUL  = 2;
 
 // =============================================================
 //  CONSTANTES DE CALIBRACIÓN Y FILTRADO
 // =============================================================
-const unsigned long TIEMPO_CALENTAMIENTO = 60000;   // 60 segundos de calentamiento MQ-2
-const unsigned long INTERVALO_LECTURA   = 2000;     // 2 segundos
-const unsigned long INTERVALO_ENVIO     = 5000;     // 5 segundos
+const unsigned long TIEMPO_CALENTAMIENTO = 60000;
+const unsigned long INTERVALO_LECTURA   = 2000;
+const unsigned long INTERVALO_ENVIO     = 5000;
 const unsigned long TIMEOUT_HTTP        = 5000;
+const unsigned long TIEMPO_RECONEXION_WIFI = 10000;
 
 // Filtros
-const int MUESTRAS_PROMEDIO_TEMP = 5;                // Para DHT11
-const int MUESTRAS_PROMEDIO_AO   = 10;               // Para MQ-2 AO
+const int MUESTRAS_PROMEDIO_TEMP = 5;
+const int MUESTRAS_PROMEDIO_AO   = 10;
 
 // Persistencia de estados
 const int LECTURAS_PARA_RIESGO_MODERADO = 3;
 const int LECTURAS_PARA_ALERTA_MAXIMA   = 3;
-const int LECTURAS_PARA_VOLVER_NORMAL   = 5;        // Histéresis
+const int LECTURAS_PARA_VOLVER_NORMAL   = 5;
 
-// Umbrales de riesgo (adaptados al DHT11)
+// Umbrales
 const float TEMP_RIESGO      = 35.0;
 const float TEMP_CRITICA     = 40.0;
 const float HUMEDAD_RIESGO   = 35.0;
 const float HUMEDAD_CRITICA  = 30.0;
-
-// Para el MQ-2: usaremos porcentaje de cambio respecto a la base
-const float PORCENTAJE_HUMO_LEVE   = 0.15;   // 15% de cambio
-const float PORCENTAJE_HUMO_MODERADO = 0.30; // 30%
-const float PORCENTAJE_HUMO_FUERTE  = 0.50;  // 50%
-
-// Histéresis para porcentajes (evita oscilaciones)
-const float HISTERESIS_PORCENTAJE = 0.05;    // 5%
+const float PORCENTAJE_HUMO_LEVE      = 0.25;
+const float PORCENTAJE_HUMO_MODERADO  = 0.35;
+const float PORCENTAJE_HUMO_FUERTE    = 0.50;
 
 // =============================================================
 //  VARIABLES GLOBALES
@@ -101,11 +131,10 @@ LedState ledState = LedState::CALENTANDO;
 // ---- MQ-2 ----
 int aoBase = 0;
 int estadoDONormal = HIGH;
-bool aoDisponible = true;           // Si el AO está conectado y tiene señal
-unsigned long tiempoInicioCalentamiento = 0;
+bool aoDisponible = true;
 bool calentamientoCompletado = false;
 
-// Buffers para filtros
+// Buffers
 float tempBuffer[MUESTRAS_PROMEDIO_TEMP];
 float humBuffer[MUESTRAS_PROMEDIO_TEMP];
 int idxTemp = 0;
@@ -115,7 +144,6 @@ int aoBuffer[MUESTRAS_PROMEDIO_AO];
 int idxAO = 0;
 bool aoBufferLleno = false;
 
-// ---- Estado actual de los sensores (filtrados) ----
 float temperatura = 0.0;
 float humedad = 0.0;
 int mq2AO = 0;
@@ -124,24 +152,27 @@ int cambioAO = 0;
 float porcentajeCambio = 0.0;
 bool humoDigital = false;
 
-// ---- Estados de riesgo con persistencia ----
 enum class Riesgo : uint8_t { NORMAL, MODERADO, ALERTA };
 Riesgo riesgoActual = Riesgo::NORMAL;
 int contadorRiesgoModerado = 0;
 int contadorAlertaMaxima = 0;
 int contadorNormal = 0;
 
-// ---- Estado de sensores ----
 bool dhtOK = true;
 bool mq2OK = true;
 int fallosDHT = 0;
 const int MAX_FALLOS_DHT = 3;
 
-// ---- WiFi y Flask ----
 bool wifiConectado = false;
 bool flaskDisponible = false;
 unsigned long ultimoIntentoWiFi = 0;
 unsigned long ultimoEnvioExitoso = 0;
+
+// ---- Descubrimiento UDP ----
+WiFiUDP udp;
+bool servidorDescubierto = false;
+unsigned long tiempoInicioDescubrimiento = 0;
+const unsigned long TIMEOUT_DESCUBRIMIENTO = 5000;  // 5 segundos
 
 // =============================================================
 //  PROTOTIPOS
@@ -149,15 +180,16 @@ unsigned long ultimoEnvioExitoso = 0;
 void actualizarLED();
 void calibrarMQ2();
 void leerSensores();
-void filtrarValores();
 void evaluarRiesgo();
 void enviarDatos();
 void conectarWiFi();
 void comprobarWiFi();
 void serialDiagnostico();
+bool descubrirServidorUDP();
+void configurarIPPorSerial();
 
 // =============================================================
-//  FUNCIONES LED (CORREGIDAS PARA ESP32 CORE 3.x)
+//  FUNCIONES LED
 // =============================================================
 void ledApagado() {
   ledcWrite(LED_ROJO, 0);
@@ -181,7 +213,7 @@ void ledAzul() {
 }
 void ledAmarillo() {
   ledcWrite(LED_ROJO, 255);
-  ledcWrite(LED_VERDE, 70);
+  ledcWrite(LED_VERDE, 180);
   ledcWrite(LED_AZUL, 0);
 }
 void ledParpadeoAzul() {
@@ -196,11 +228,11 @@ void ledParpadeoAzul() {
 
 void actualizarLED() {
   if (!dhtOK || !mq2OK) {
-    ledParpadeoAzul();          // Error de sensor
+    ledParpadeoAzul();
     return;
   }
   if (!calentamientoCompletado) {
-    ledAzul();                  // Calentando
+    ledAzul();
     return;
   }
   switch (riesgoActual) {
@@ -211,42 +243,27 @@ void actualizarLED() {
 }
 
 // =============================================================
-//  CALIBRACIÓN MQ-2 (con calentamiento de 60 segundos)
+//  CALIBRACIÓN MQ-2
 // =============================================================
 void calibrarMQ2() {
   Serial.println();
   Serial.println("======================================");
   Serial.println("   CALENTANDO MQ-2 (60 segundos)");
   Serial.println("======================================");
-  Serial.println("Espera a que el sensor se estabilice.");
-  Serial.println("NO acerques humo ni gases durante este tiempo.");
-  Serial.println();
-
   ledState = LedState::CALENTANDO;
   actualizarLED();
 
-  const int MUESTRAS_CALIB = 20;
   long sumaAO = 0;
   int muestrasValidas = 0;
   int high = 0, low = 0;
 
   unsigned long inicio = millis();
   while (millis() - inicio < TIEMPO_CALENTAMIENTO) {
-    // Leer AO y DO cada 500 ms para ver evolución
     int ao = analogRead(MQ2_AO);
     int doVal = digitalRead(MQ2_DO);
-    
-    // Mostrar progreso cada 5 segundos
-    if ((millis() - inicio) % 5000 < 500) {
-      Serial.print(".");
-    }
-    
-    // Acumular solo al final del calentamiento (últimos 10 segundos)
+    if ((millis() - inicio) % 5000 < 500) Serial.print(".");
     if (millis() - inicio > TIEMPO_CALENTAMIENTO - 10000) {
-      if (ao >= 0 && ao <= 4095) {
-        sumaAO += ao;
-        muestrasValidas++;
-      }
+      if (ao >= 0 && ao <= 4095) { sumaAO += ao; muestrasValidas++; }
       if (doVal == HIGH) high++; else low++;
     }
     delay(500);
@@ -254,7 +271,7 @@ void calibrarMQ2() {
   Serial.println();
 
   if (muestrasValidas == 0) {
-    Serial.println("⚠️  No se pudieron leer muestras válidas del AO.");
+    Serial.println("ERROR: No se pudieron leer muestras válidas del AO.");
     aoDisponible = false;
     aoBase = 0;
   } else {
@@ -266,27 +283,24 @@ void calibrarMQ2() {
   estadoDONormal = (high >= low) ? HIGH : LOW;
   Serial.print("DO NORMAL = "); Serial.println(estadoDONormal);
 
-  // Si el AO no varía o está en 0, probablemente no está conectado
   if (aoDisponible && aoBase < 50) {
-    Serial.println("⚠️  El valor AO es muy bajo. Posiblemente el pin no está conectado.");
+    Serial.println("ADVERTENCIA: AO muy bajo. Posiblemente el pin no está conectado.");
     aoDisponible = false;
   }
 
   calentamientoCompletado = true;
   ledState = LedState::NORMAL;
   actualizarLED();
-  Serial.println("CALIBRACION TERMINADA");
+  Serial.println("CALIBRACIÓN TERMINADA");
   Serial.println();
 }
 
 // =============================================================
-//  LECTURA DHT11 CON VALIDACIÓN
+//  LECTURA DHT22
 // =============================================================
-bool leerDHT11(float &temp, float &hum) {
+bool leerDHT22(float &temp, float &hum) {
   float t = dht.readTemperature();
   float h = dht.readHumidity();
-  
-  // Validar rango realista para DHT11
   if (isnan(t) || isnan(h) || t < -10 || t > 50 || h < 10 || h > 90) {
     return false;
   }
@@ -330,12 +344,11 @@ int obtenerPromedioAO() {
 }
 
 // =============================================================
-//  LECTURA Y FILTRADO DE SENSORES
+//  LECTURA DE SENSORES
 // =============================================================
 void leerSensores() {
-  // ---- DHT11 ----
   float t, h;
-  if (leerDHT11(t, h)) {
+  if (leerDHT22(t, h)) {
     dhtOK = true;
     fallosDHT = 0;
     agregarMuestraTemp(t, h);
@@ -343,11 +356,9 @@ void leerSensores() {
     fallosDHT++;
     if (fallosDHT >= MAX_FALLOS_DHT) {
       dhtOK = false;
-      Serial.println("⚠️  DHT11 sin respuesta. Usando último valor válido.");
     }
   }
 
-  // ---- MQ-2 ----
   int aoRaw = analogRead(MQ2_AO);
   int doVal = digitalRead(MQ2_DO);
 
@@ -356,27 +367,21 @@ void leerSensores() {
     agregarMuestraAO(aoRaw);
   } else {
     mq2OK = false;
-    Serial.println("⚠️  MQ-2 AO fuera de rango.");
   }
 
   mq2AO = obtenerPromedioAO();
   mq2DO = doVal;
 
-  // Si el AO no está disponible, usamos solo el DO
-  if (!aoDisponible) {
+  if (!aoDisponible || aoBase == 0) {
     cambioAO = 0;
     porcentajeCambio = 0.0;
-  } else if (aoBase > 0) {
+  } else {
     cambioAO = abs(mq2AO - aoBase);
     porcentajeCambio = (float)cambioAO / aoBase;
-  } else {
-    cambioAO = 0;
-    porcentajeCambio = 0.0;
   }
 
   humoDigital = (mq2DO != estadoDONormal);
 
-  // ---- Temperatura y humedad filtradas ----
   if (dhtOK) {
     temperatura = obtenerPromedioTemp(false);
     humedad = obtenerPromedioTemp(true);
@@ -384,63 +389,38 @@ void leerSensores() {
 }
 
 // =============================================================
-//  EVALUACIÓN DE RIESGO CON PERSISTENCIA E HISTÉRESIS
+//  EVALUACIÓN DE RIESGO (sin cambios)
 // =============================================================
 void evaluarRiesgo() {
-  // Condiciones booleanas
   bool tempRiesgo = (temperatura >= TEMP_RIESGO);
   bool tempCritica = (temperatura >= TEMP_CRITICA);
   bool humRiesgo = (humedad <= HUMEDAD_RIESGO);
   bool humCritica = (humedad <= HUMEDAD_CRITICA);
 
-  // Determinar nivel de humo
-  bool humoLeve = false;
-  bool humoModerado = false;
-  bool humoFuerte = false;
+  bool humoLeve = false, humoModerado = false, humoFuerte = false;
   if (aoDisponible && aoBase > 0) {
-    float umbralLeve = PORCENTAJE_HUMO_LEVE;
-    float umbralModerado = PORCENTAJE_HUMO_MODERADO;
-    float umbralFuerte = PORCENTAJE_HUMO_FUERTE;
-    // Aplicar histéresis: para salir de un nivel, el porcentaje debe bajar más de lo que subió
-    if (porcentajeCambio >= umbralFuerte) humoFuerte = true;
-    else if (porcentajeCambio >= umbralModerado) humoModerado = true;
-    else if (porcentajeCambio >= umbralLeve) humoLeve = true;
-    // Si el DO digital está activo, consideramos humo como mínimo moderado
+    if (porcentajeCambio >= PORCENTAJE_HUMO_FUERTE) humoFuerte = true;
+    else if (porcentajeCambio >= PORCENTAJE_HUMO_MODERADO) humoModerado = true;
+    else if (porcentajeCambio >= PORCENTAJE_HUMO_LEVE) humoLeve = true;
     if (humoDigital) humoModerado = true;
   } else {
-    // Si no hay AO, usamos solo el DO
     if (humoDigital) humoModerado = true;
   }
 
-  // ---- DECISIÓN DE RIESGO ----
-  bool condicionModerado = false;
-  bool condicionAlerta = false;
+  bool condicionModerado = false, condicionAlerta = false;
+  if (tempRiesgo || humRiesgo || humoLeve) condicionModerado = true;
+  if (humoFuerte || (tempCritica && humCritica && (humoModerado || humoDigital))) condicionAlerta = true;
 
-  // Riesgo moderado: temperatura alta O humedad baja O humo leve
-  if (tempRiesgo || humRiesgo || humoLeve) {
-    condicionModerado = true;
-  }
-
-  // Alerta máxima: (temperatura crítica Y humedad crítica) Y (humo moderado o DO activo)
-  // O también si humo fuerte independientemente
-  if (humoFuerte || (tempCritica && humCritica && (humoModerado || humoDigital))) {
-    condicionAlerta = true;
-  }
-
-  // ---- PERSISTENCIA ----
   Riesgo nuevoRiesgo = Riesgo::NORMAL;
-
   if (condicionAlerta) {
     contadorAlertaMaxima++;
     contadorRiesgoModerado = 0;
     if (contadorAlertaMaxima >= LECTURAS_PARA_ALERTA_MAXIMA) {
       nuevoRiesgo = Riesgo::ALERTA;
     } else {
-      // Mientras no se confirme, mantenemos el estado anterior si era ALERTA
       nuevoRiesgo = (riesgoActual == Riesgo::ALERTA) ? Riesgo::ALERTA : Riesgo::MODERADO;
     }
-  }
-  else if (condicionModerado) {
+  } else if (condicionModerado) {
     contadorRiesgoModerado++;
     contadorAlertaMaxima = 0;
     if (contadorRiesgoModerado >= LECTURAS_PARA_RIESGO_MODERADO) {
@@ -448,38 +428,25 @@ void evaluarRiesgo() {
     } else {
       nuevoRiesgo = (riesgoActual == Riesgo::ALERTA) ? Riesgo::ALERTA : Riesgo::MODERADO;
     }
-  }
-  else {
-    // Condiciones normales: necesitamos varias lecturas para volver a NORMAL (histéresis)
+  } else {
     contadorNormal++;
     if (contadorNormal >= LECTURAS_PARA_VOLVER_NORMAL) {
       nuevoRiesgo = Riesgo::NORMAL;
       contadorRiesgoModerado = 0;
       contadorAlertaMaxima = 0;
     } else {
-      // Mantener el estado actual mientras no se confirme la vuelta
       nuevoRiesgo = riesgoActual;
     }
   }
 
-  // Actualizar solo si ha cambiado y se ha confirmado
   if (nuevoRiesgo != riesgoActual) {
-    // Si el nuevo riesgo es menor (ej. ALERTA→MODERADO), también necesitamos confirmación
-    // pero ya lo manejamos con los contadores.
     riesgoActual = nuevoRiesgo;
-    // Resetear contadores de confirmación para evitar cambios bruscos
     if (nuevoRiesgo == Riesgo::NORMAL) {
-      contadorRiesgoModerado = 0;
-      contadorAlertaMaxima = 0;
+      contadorRiesgoModerado = 0; contadorAlertaMaxima = 0;
     }
-    if (nuevoRiesgo == Riesgo::MODERADO) {
-      contadorAlertaMaxima = 0;
-    }
+    if (nuevoRiesgo == Riesgo::MODERADO) contadorAlertaMaxima = 0;
     contadorNormal = 0;
   }
-
-  // Si no se cumplen condiciones, pero los contadores no han llegado al umbral,
-  // el estado se mantiene (eso ya está implementado con las condiciones else).
 }
 
 // =============================================================
@@ -490,52 +457,107 @@ void serialDiagnostico() {
   Serial.println("================================================");
   Serial.println("              FORESTGUARD");
   Serial.println("================================================");
-
-  // Temperatura y humedad
   if (dhtOK) {
-    Serial.print("🌡️  Temperatura : "); Serial.print(temperatura, 1); Serial.println(" °C");
-    Serial.print("💧  Humedad     : "); Serial.print(humedad, 1); Serial.println(" %");
+    Serial.print("Temperatura : "); Serial.print(temperatura, 1); Serial.println(" C");
+    Serial.print("Humedad     : "); Serial.print(humedad, 1); Serial.println(" %");
   } else {
-    Serial.println("⚠️  DHT11: SIN DATOS");
+    Serial.println("DHT22: SIN DATOS");
   }
-
-  // MQ-2
-  Serial.print("📡  MQ-2 AO     : "); Serial.println(mq2AO);
+  Serial.print("MQ-2 AO     : "); Serial.println(mq2AO);
   if (aoDisponible) {
-    Serial.print("🔵  AO BASE     : "); Serial.println(aoBase);
-    Serial.print("📊  Cambio AO   : "); Serial.println(cambioAO);
-    Serial.print("📈  Porcentaje  : "); Serial.print(porcentajeCambio * 100, 1); Serial.println(" %");
+    Serial.print("AO BASE     : "); Serial.println(aoBase);
+    Serial.print("Cambio AO   : "); Serial.println(cambioAO);
+    Serial.print("Porcentaje  : "); Serial.print(porcentajeCambio * 100, 1); Serial.println(" %");
   } else {
-    Serial.println("⚠️  AO no disponible (usando DO)");
+    Serial.println("AO no disponible (usando DO)");
   }
-  Serial.print("🔴  MQ-2 DO     : "); Serial.println(mq2DO);
-  Serial.print("🔴  Humo DO     : "); Serial.println(humoDigital ? "SI" : "NO");
-
-  // Estado del sistema
+  Serial.print("MQ-2 DO     : "); Serial.println(mq2DO);
+  Serial.print("Humo DO     : "); Serial.println(humoDigital ? "SI" : "NO");
   const char* estadoTexto;
   switch (riesgoActual) {
-    case Riesgo::NORMAL:   estadoTexto = "🟢 NORMAL"; break;
-    case Riesgo::MODERADO: estadoTexto = "🟡 RIESGO MODERADO"; break;
-    case Riesgo::ALERTA:   estadoTexto = "🔴 ALERTA MÁXIMA"; break;
-    default: estadoTexto = "❓ DESCONOCIDO";
+    case Riesgo::NORMAL:   estadoTexto = "NORMAL"; break;
+    case Riesgo::MODERADO: estadoTexto = "RIESGO MODERADO"; break;
+    case Riesgo::ALERTA:   estadoTexto = "ALERTA MAXIMA"; break;
+    default: estadoTexto = "DESCONOCIDO";
   }
-  Serial.print("🚨  Estado      : "); Serial.println(estadoTexto);
-
-  // Confirmaciones (debug)
-  Serial.print("   Conf. MOD   : "); Serial.print(contadorRiesgoModerado);
-  Serial.print("/"); Serial.print(LECTURAS_PARA_RIESGO_MODERADO);
-  Serial.print("   ALERTA: "); Serial.print(contadorAlertaMaxima);
-  Serial.print("/"); Serial.println(LECTURAS_PARA_ALERTA_MAXIMA);
-
-  // WiFi y Flask
-  Serial.print("📶  WiFi        : "); Serial.println(wifiConectado ? "CONECTADO" : "DESCONECTADO");
-  Serial.print("🌐  Flask       : "); Serial.println(flaskDisponible ? "DISPONIBLE" : "NO DISPONIBLE");
-
+  Serial.print("Estado      : "); Serial.println(estadoTexto);
+  Serial.print("WiFi        : "); Serial.println(wifiConectado ? "CONECTADO" : "DESCONECTADO");
+  Serial.print("Flask       : "); Serial.println(flaskDisponible ? "DISPONIBLE" : "NO DISPONIBLE");
+  Serial.print("Servidor IP : "); Serial.println(SERVER_IP);
   Serial.println("================================================");
 }
 
 // =============================================================
-//  ENVÍO A FLASK (con manejo de errores)
+//  DESCUBRIMIENTO UDP (Broadcast) - CORREGIDO
+// =============================================================
+bool descubrirServidorUDP() {
+  Serial.println("Buscando servidor Flask por UDP broadcast...");
+  udp.begin(12345);
+  IPAddress broadcastIp = WiFi.localIP();
+  broadcastIp[3] = 255;  // broadcast de la subred
+  udp.beginPacket(broadcastIp, 12345);
+  // --- LÍNEA CORREGIDA: usamos print() en lugar de write() ---
+  udp.print("FORESTGUARD_DISCOVER");
+  udp.endPacket();
+
+  unsigned long inicio = millis();
+  while (millis() - inicio < TIMEOUT_DESCUBRIMIENTO) {
+    int packetSize = udp.parsePacket();
+    if (packetSize) {
+      char buffer[64] = {0};
+      int len = udp.read(buffer, sizeof(buffer) - 1);
+      if (len > 0) {
+        String respuesta = String(buffer);
+        if (respuesta.startsWith("SERVER_IP:")) {
+          String ip = respuesta.substring(10);
+          ip.trim();
+          if (ip.length() > 0) {
+            SERVER_IP = ip;
+            Serial.print("Servidor encontrado en IP: ");
+            Serial.println(SERVER_IP);
+            udp.stop();
+            return true;
+          }
+        }
+      }
+    }
+    delay(100);
+  }
+  udp.stop();
+  Serial.println("No se encontró servidor por UDP. Usando IP por defecto.");
+  return false;
+}
+
+// =============================================================
+//  CONFIGURACIÓN MANUAL POR SERIAL
+// =============================================================
+void configurarIPPorSerial() {
+  Serial.println("Escribe 'SETIP:xxx.xxx.xxx.xxx' para cambiar la IP del servidor.");
+  Serial.println("Escribe 'CONTINUE' para usar la IP actual y continuar.");
+  unsigned long inicio = millis();
+  while (millis() - inicio < 30000) {  // espera 30 segundos
+    if (Serial.available()) {
+      String cmd = Serial.readStringUntil('\n');
+      cmd.trim();
+      if (cmd.startsWith("SETIP:")) {
+        String ip = cmd.substring(6);
+        ip.trim();
+        if (ip.length() > 0) {
+          SERVER_IP = ip;
+          Serial.print("IP actualizada a: ");
+          Serial.println(SERVER_IP);
+        }
+      } else if (cmd == "CONTINUE") {
+        Serial.println("Continuando con la IP actual.");
+        return;
+      }
+    }
+    delay(100);
+  }
+}
+
+// =============================================================
+//  ENVÍO A FLASK (MEJORADO)
 // =============================================================
 void enviarDatos() {
   if (!wifiConectado) {
@@ -544,7 +566,7 @@ void enviarDatos() {
   }
 
   HTTPClient http;
-  String url = "http://" + String(SERVER_IP) + ":" + String(SERVER_PORT) +
+  String url = "http://" + SERVER_IP + ":" + String(SERVER_PORT) +
                "/api/estaciones/" + stationCode + "/datos";
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
@@ -558,7 +580,7 @@ void enviarDatos() {
   doc["mq2_base"] = aoBase;
   doc["cambio_ao"] = cambioAO;
   doc["mq2_do"] = mq2DO;
-  doc["nivel_humo"] = (int)riesgoActual; // 0=NORMAL, 1=MODERADO, 2=ALERTA
+  doc["nivel_humo"] = (int)riesgoActual;
   doc["mac"] = stationCode;
   doc["porcentaje_cambio"] = porcentajeCambio;
 
@@ -568,32 +590,50 @@ void enviarDatos() {
   int codigo = http.POST(payload);
   if (codigo > 0) {
     Serial.print("[HTTP] Código: "); Serial.println(codigo);
+    String respuesta = http.getString();
     if (codigo == 200 || codigo == 201) {
       flaskDisponible = true;
       ultimoEnvioExitoso = millis();
+      Serial.println("[HTTP] Éxito");
+    } else if (codigo == 403) {
+      Serial.println("[HTTP] Error 403: Estación pendiente de aprobación. Ve al panel de administración y aprueba la estación.");
+      flaskDisponible = false;
+    } else if (codigo == 401) {
+      Serial.println("[HTTP] Error 401: API key inválida. Verifica DEFAULT_API_KEY.");
+      flaskDisponible = false;
+    } else if (codigo == 404) {
+      Serial.println("[HTTP] Error 404: Estación no registrada. El backend la registrará automáticamente si la API key es correcta.");
+      flaskDisponible = false;
     } else {
-      Serial.println("[HTTP] Error del servidor");
+      Serial.print("[HTTP] Error del servidor: "); Serial.println(codigo);
+      flaskDisponible = false;
+    }
+    if (codigo != 200 && codigo != 201) {
+      Serial.print("Respuesta: "); Serial.println(respuesta);
     }
   } else {
-    Serial.print("[HTTP] Falló: "); Serial.println(http.errorToString(codigo));
-    if (codigo == -1) flaskDisponible = false;
+    Serial.print("[HTTP] Fallo: "); Serial.println(http.errorToString(codigo));
+    flaskDisponible = false;
+    if (codigo == -1) {
+      Serial.println("Posiblemente el servidor no está accesible. Verifica IP y firewall.");
+    }
   }
   http.end();
 }
 
 // =============================================================
-//  WIFI
+//  WIFI (CON RECONEXIÓN)
 // =============================================================
 void conectarWiFi() {
   Serial.println();
   Serial.println("======================================");
-  Serial.println("             CONEXION WIFI");
+  Serial.println("             CONEXIÓN WIFI");
   Serial.println("======================================");
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Conectando");
   int intentos = 0;
-  while (WiFi.status() != WL_CONNECTED && intentos < 20) {
+  while (WiFi.status() != WL_CONNECTED && intentos < 30) {
     delay(500);
     Serial.print(".");
     intentos++;
@@ -616,11 +656,21 @@ void comprobarWiFi() {
   }
   wifiConectado = false;
   unsigned long ahora = millis();
-  if (ahora - ultimoIntentoWiFi < 10000) return;
+  if (ahora - ultimoIntentoWiFi < TIEMPO_RECONEXION_WIFI) return;
   ultimoIntentoWiFi = ahora;
-  Serial.println("WIFI DESCONECTADO, reconectando...");
+  Serial.println("WiFi desconectado, reconectando...");
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 10000) {
+    delay(100);
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi reconectado");
+    wifiConectado = true;
+  } else {
+    Serial.println("No se pudo reconectar WiFi");
+  }
 }
 
 // =============================================================
@@ -632,33 +682,41 @@ void setup() {
 
   Serial.println();
   Serial.println("======================================");
-  Serial.println("           FORESTGUARD v2.0");
+  Serial.println("           FORESTGUARD v2.2");
   Serial.println("      SISTEMA DE MONITOREO");
   Serial.println("======================================");
 
-  // LED PWM (CORREGIDO PARA ESP32 CORE 3.x)
+  // LED PWM
   ledcAttach(LED_ROJO, FRECUENCIA, RESOLUCION);
   ledcAttach(LED_VERDE, FRECUENCIA, RESOLUCION);
   ledcAttach(LED_AZUL, FRECUENCIA, RESOLUCION);
   ledApagado();
 
-  // Pines
   pinMode(MQ2_AO, INPUT);
   pinMode(MQ2_DO, INPUT);
   dht.begin();
 
-  // Secuencia de diagnóstico LED
+  // Secuencia LED
   ledRojo(); delay(300);
   ledVerde(); delay(300);
   ledAzul(); delay(300);
   ledAmarillo(); delay(300);
   ledApagado();
 
-  // Calentamiento y calibración MQ-2 (60 segundos)
+  // Calibración MQ-2
   calibrarMQ2();
 
-  // Conectar WiFi (después de la calibración para no interferir)
+  // Conectar WiFi
   conectarWiFi();
+  if (wifiConectado) {
+    // Descubrir servidor
+    if (!descubrirServidorUDP()) {
+      // Si falla, dar opción de configurar manualmente por serial
+      configurarIPPorSerial();
+    }
+  } else {
+    Serial.println("No hay WiFi, no se puede descubrir servidor.");
+  }
 
   // Obtener MAC
   stationCode = WiFi.macAddress();
@@ -678,7 +736,8 @@ void setup() {
   Serial.println("       FORESTGUARD LISTO");
   Serial.println("======================================");
   Serial.println("MONITOREO ACTIVO");
-  Serial.println("ENVIO A FLASK: CADA 5 SEGUNDOS");
+  Serial.println("ENVÍO A FLASK: CADA 5 SEGUNDOS");
+  Serial.print("SERVIDOR IP: "); Serial.println(SERVER_IP);
   Serial.println();
 }
 
@@ -692,10 +751,6 @@ void loop() {
 
   comprobarWiFi();
 
-  // Recalibración periódica (cada 10 minutos) si el sistema está estable
-  // (esto se podría añadir más adelante)
-
-  // Lectura de sensores cada INTERVALO_LECTURA
   if (millis() - ultimaLectura >= INTERVALO_LECTURA) {
     ultimaLectura = millis();
     leerSensores();
@@ -703,18 +758,15 @@ void loop() {
     actualizarLED();
   }
 
-  // Monitor serie cada 2 segundos
   if (millis() - ultimoSerial >= 2000) {
     ultimoSerial = millis();
     serialDiagnostico();
   }
 
-  // Envío a Flask cada 5 segundos
   if (millis() - ultimoEnvio >= INTERVALO_ENVIO) {
     ultimoEnvio = millis();
     enviarDatos();
   }
 
-  // Pequeña pausa para no saturar el bucle
   delay(50);
 }
