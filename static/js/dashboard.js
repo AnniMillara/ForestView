@@ -6,8 +6,6 @@
 let dashboardMap = null;
 let zonesMap = null;
 let environmentChart = null;
-let sensorHistory = [];
-let selectedChartPeriod = 24;
 let updateInterval = null;
 
 // Elementos del DOM
@@ -19,12 +17,18 @@ const lastUpdateElement = document.getElementById("lastUpdate");
 const sensorConnectionStatus = document.getElementById("sensorConnectionStatus");
 
 /* =========================================================
-   OBTENER DATOS DE LA API
+   OBTENER DATOS DE LA API (con filtro por estación)
 ========================================================= */
 
 async function fetchDashboardData() {
     try {
-        const response = await fetch('/api/dashboard_data');
+        const urlParams = new URLSearchParams(window.location.search);
+        const estacion = urlParams.get('estacion');
+        let apiUrl = '/api/dashboard_data';
+        if (estacion) {
+            apiUrl += `?estacion=${estacion}`;
+        }
+        const response = await fetch(apiUrl);
         if (!response.ok) throw new Error('Error en la API');
         const data = await response.json();
         return data;
@@ -39,17 +43,24 @@ async function fetchDashboardData() {
 ========================================================= */
 
 function updateDashboardWithData(data) {
-    if (!data || data.length === 0) return;
+    if (!data || data.length === 0) {
+        if (temperatureElement) temperatureElement.textContent = '--';
+        if (humidityElement) humidityElement.textContent = '--';
+        if (smokeElement) smokeElement.textContent = '--';
+        if (riskElement) riskElement.textContent = 'NORMAL';
+        if (sensorConnectionStatus) sensorConnectionStatus.textContent = '0/0 estaciones conectadas';
+        return;
+    }
 
     let total = data.length;
     let online = data.filter(e => e.estado === 'ONLINE').length;
     let offline = data.filter(e => e.estado === 'OFFLINE').length;
-    let error = data.filter(e => e.estado === 'ERROR').length;
 
     if (sensorConnectionStatus) {
         sensorConnectionStatus.textContent = `${online}/${total} estaciones conectadas`;
     }
 
+    // Última medición (la más reciente entre las estaciones filtradas)
     let ultimaMedicion = null;
     let ultimaFecha = null;
     data.forEach(est => {
@@ -61,6 +72,10 @@ function updateDashboardWithData(data) {
             }
         }
     });
+
+    if (data.length === 1) {
+        ultimaMedicion = data[0];
+    }
 
     if (ultimaMedicion) {
         if (temperatureElement) {
@@ -75,48 +90,49 @@ function updateDashboardWithData(data) {
             let humo = ultimaMedicion.humo_nombre || 'NINGUNO';
             smokeElement.textContent = humo;
         }
-        let maxSeveridad = 0;
-        let maxNombre = 'NORMAL';
-        let maxColor = '#159447';
-        data.forEach(est => {
-            if (est.nivel_alerta_activa) {
-                let severidad = { 'NORMAL': 0, 'RIESGO_MODERADO': 1, 'RIESGO_ALTO': 2, 'ALERTA': 3 }[est.nivel_alerta_activa] || 0;
-                if (severidad > maxSeveridad) {
-                    maxSeveridad = severidad;
-                    maxNombre = est.nivel_alerta_activa;
-                    maxColor = est.color_alerta || '#159447';
-                }
+    }
+
+    // Riesgo máximo
+    let maxSeveridad = 0;
+    let maxNombre = 'NORMAL';
+    let maxColor = '#159447';
+    data.forEach(est => {
+        if (est.nivel_alerta_activa) {
+            let severidad = { 'NORMAL': 0, 'RIESGO_MODERADO': 1, 'RIESGO_ALTO': 2, 'ALERTA': 3 }[est.nivel_alerta_activa] || 0;
+            if (severidad > maxSeveridad) {
+                maxSeveridad = severidad;
+                maxNombre = est.nivel_alerta_activa;
+                maxColor = est.color_alerta || '#159447';
             }
-        });
-        if (riskElement) {
-            riskElement.textContent = maxNombre;
-            riskElement.style.color = maxColor;
         }
-        const indicator = document.querySelector(".risk-indicator");
-        if (indicator) {
-            indicator.style.background = maxColor;
-            indicator.style.boxShadow = `0 0 0 5px ${maxColor}22`;
-        }
+    });
+    if (riskElement) {
+        riskElement.textContent = maxNombre;
+        riskElement.style.color = maxColor;
+    }
+    const indicator = document.querySelector(".risk-indicator");
+    if (indicator) {
+        indicator.style.background = maxColor;
+        indicator.style.boxShadow = `0 0 0 5px ${maxColor}22`;
     }
 
     updateLastUpdate();
 
+    // Actualizar mapa
     if (document.getElementById('dashboardMap') && dashboardMap) {
         updateMapMarkers(dashboardMap, data);
     }
     if (document.getElementById('zonesMap') && zonesMap) {
         updateMapMarkers(zonesMap, data);
     }
-
-    updateRecentAlerts(data);
-    updateDeviceList(data);
 }
 
 /* =========================================================
-   ACTUALIZAR MAPA CON MARCADORES (versión mejorada)
+   ACTUALIZAR MAPA CON MARCADORES
 ========================================================= */
 
 function updateMapMarkers(map, data) {
+    // Limpiar marcadores anteriores
     map.eachLayer((layer) => {
         if (layer instanceof L.Marker || layer instanceof L.Popup) {
             map.removeLayer(layer);
@@ -155,18 +171,8 @@ function updateMapMarkers(map, data) {
 }
 
 /* =========================================================
-   OTRAS FUNCIONES (sin cambios)
+   OTRAS FUNCIONES
 ========================================================= */
-
-function updateRecentAlerts(data) {
-    const container = document.querySelector('.alerts-list');
-    if (!container) return;
-}
-
-function updateDeviceList(data) {
-    const container = document.querySelector('.device-list');
-    if (!container) return;
-}
 
 function updateLastUpdate() {
     if (!lastUpdateElement) return;
@@ -251,6 +257,10 @@ function initializeEnvironmentChart(historico) {
     const temps = historico.map(h => h.temperatura !== null && h.temperatura !== undefined ? h.temperatura : null);
     const hums = historico.map(h => h.humedad !== null && h.humedad !== undefined ? h.humedad : null);
     const humo = historico.map(h => h.humo !== null && h.humo !== undefined ? h.humo : 0);
+
+    if (environmentChart) {
+        environmentChart.destroy();
+    }
 
     environmentChart = new Chart(ctx, {
         type: 'line',
@@ -344,14 +354,6 @@ function initializeEnvironmentChart(historico) {
     });
 }
 
-function initializeChartPeriod() {
-    const chartPeriod = document.getElementById("chartPeriod");
-    if (!chartPeriod) return;
-    chartPeriod.addEventListener("change", function() {
-        window.location.href = `/dashboard?rango=${this.value}`;
-    });
-}
-
 function startPeriodicUpdate() {
     updateInterval = setInterval(async () => {
         const data = await fetchDashboardData();
@@ -364,7 +366,6 @@ function startPeriodicUpdate() {
 document.addEventListener("DOMContentLoaded", function() {
     initializeDashboardMap();
     initializeZonesMap();
-    initializeChartPeriod();
     fetchDashboardData().then(data => {
         if (data) {
             updateDashboardWithData(data);

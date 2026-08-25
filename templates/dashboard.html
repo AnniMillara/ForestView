@@ -12,11 +12,26 @@
         <h2>Monitoreo forestal</h2>
         <p>Supervisa las condiciones ambientales y detecta posibles riesgos en tiempo real.</p>
     </div>
-    <div class="system-online">
-        <span></span>
-        <div>
-            <strong>Sistema operativo</strong>
-            <small id="sensorConnectionStatus">{{ online }}/{{ total }} estaciones conectadas</small>
+    <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <!-- Estado del sistema -->
+        <div class="system-online" style="margin:0; padding: 8px 14px;">
+            <span></span>
+            <div>
+                <strong>Sistema operativo</strong>
+                <small id="sensorConnectionStatus">{{ online }}/{{ total }} estaciones conectadas</small>
+            </div>
+        </div>
+        <!-- Selector de estaciones -->
+        <div style="display: flex; align-items: center; gap: 8px; background: white; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border);">
+            <i class="fa-solid fa-filter" style="color: var(--text-gray); font-size: 12px;"></i>
+            <select id="stationSelector" style="border: none; background: transparent; font-size: 12px; font-weight: 500; padding: 6px 4px; outline: none; color: var(--text-dark); min-width: 140px;">
+                <option value="">Todas las estaciones</option>
+                {% for est in estaciones_selector %}
+                    <option value="{{ est.id_estacion }}" {% if estacion_seleccionada == est.id_estacion %}selected{% endif %}>
+                        {{ est.nombre }}
+                    </option>
+                {% endfor %}
+            </select>
         </div>
     </div>
 </div>
@@ -118,12 +133,14 @@
                 <span class="panel-label">MONITOREO</span>
                 <h3>Condiciones ambientales</h3>
             </div>
-            <select id="chartPeriod">
-                <option value="1h" {% if rango == '1h' %}selected{% endif %}>Última hora</option>
-                <option value="6h" {% if rango == '6h' %}selected{% endif %}>Últimas 6 horas</option>
-                <option value="24h" {% if rango == '24h' %}selected{% endif %}>Últimas 24 horas</option>
-                <option value="7d" {% if rango == '7d' %}selected{% endif %}>Últimos 7 días</option>
-            </select>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <select id="chartPeriod">
+                    <option value="1h" {% if rango == '1h' %}selected{% endif %}>Última hora</option>
+                    <option value="6h" {% if rango == '6h' %}selected{% endif %}>Últimas 6 horas</option>
+                    <option value="24h" {% if rango == '24h' %}selected{% endif %}>Últimas 24 horas</option>
+                    <option value="7d" {% if rango == '7d' %}selected{% endif %}>Últimos 7 días</option>
+                </select>
+            </div>
         </div>
         <div class="chart-container">
             <canvas id="environmentChart"></canvas>
@@ -207,12 +224,38 @@
 
 {% block extra_scripts %}
 <script>
-    // Inicializar el gráfico con los datos históricos pasados desde Flask
     document.addEventListener('DOMContentLoaded', function() {
         const historico = {{ historico|tojson if historico else [] }};
-        // Llamar a la función global definida en dashboard.js
         if (typeof window.initializeChart === 'function') {
             window.initializeChart(historico);
+        }
+
+        // Selector de estaciones
+        const stationSelector = document.getElementById('stationSelector');
+        if (stationSelector) {
+            stationSelector.addEventListener('change', function() {
+                const value = this.value;
+                const url = new URL(window.location.href);
+                if (value) {
+                    url.searchParams.set('estacion', value);
+                } else {
+                    url.searchParams.delete('estacion');
+                }
+                window.location.href = url.toString();
+            });
+        }
+
+        // Selector de rango (mantiene el filtro de estación)
+        const chartPeriod = document.getElementById('chartPeriod');
+        if (chartPeriod) {
+            chartPeriod.addEventListener('change', function() {
+                const estacion = new URLSearchParams(window.location.search).get('estacion');
+                let url = `/dashboard?rango=${this.value}`;
+                if (estacion) {
+                    url += `&estacion=${estacion}`;
+                }
+                window.location.href = url;
+            });
         }
     });
 </script>
