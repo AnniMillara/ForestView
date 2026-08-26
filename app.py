@@ -1382,17 +1382,16 @@ def api_recibir_datos(codigo):
     mq2_do = data.get('mq2_do')
     nivel_humo_enviado = data.get('nivel_humo')
 
-    # --- Leer dht_ok y mq2_ok desde el ESP32 si vienen ---
+    # --- Determinar dht_ok: si no viene explícitamente, calcular según datos ---
     dht_ok_enviado = data.get('dht_ok')
-    mq2_ok_enviado = data.get('mq2_ok')
-
-    # Determinar DHT OK
     if dht_ok_enviado is not None:
         dht_ok = bool(dht_ok_enviado)
     else:
-        dht_ok = temperatura is not None and humedad is not None
+        # Si no viene, asumimos que es OK si temperatura y humedad son valores válidos (no None y no 0)
+        dht_ok = (temperatura is not None and humedad is not None and temperatura != 0 and humedad != 0)
 
-    # Determinar MQ-2 OK
+    # --- Determinar mq2_ok ---
+    mq2_ok_enviado = data.get('mq2_ok')
     if mq2_ok_enviado is not None:
         mq2_ok = bool(mq2_ok_enviado)
     else:
@@ -1406,6 +1405,13 @@ def api_recibir_datos(codigo):
         id_tipo_humo = mapear_nivel_humo_a_id(nivel_humo_enviado)
     elif cambio_ao is not None and mq2_ok:
         _, id_tipo_humo = clasificar_humo(cambio_ao, umbrales)
+
+    # Asegurar que cambio_ao sea entero (si es float, convertir a int)
+    if cambio_ao is not None:
+        try:
+            cambio_ao = int(float(cambio_ao))
+        except:
+            cambio_ao = 0
 
     # Insertar medición
     id_medicion = db.execute_query("""
@@ -1443,7 +1449,6 @@ def api_recibir_datos(codigo):
         WHERE id_estacion = %s
     """, (request.remote_addr, ESTADO_ESTACION['ONLINE'], id_estacion))
 
-    # Si hay error de sensor, crear/actualizar alerta SENSOR_ERROR
     if hubo_error_sensor:
         crear_o_actualizar_alerta(
             id_estacion, 'SENSOR_ERROR', 'RIESGO_MODERADO',
@@ -1451,7 +1456,7 @@ def api_recibir_datos(codigo):
             id_medicion=id_medicion
         )
     else:
-        # Si los sensores están OK, resolver alertas de SENSOR_ERROR
+        # Resolver alerta SENSOR_ERROR si existe
         db.execute_query("""
             UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
             WHERE id_estacion = %s AND id_estado_alerta = %s
@@ -1502,7 +1507,7 @@ def api_recibir_datos(codigo):
                 id_medicion=id_medicion, id_evaluacion=id_evaluacion
             )
         else:
-            # Si no hay alerta de riesgo, resolver las de riesgo que pudieran estar activas
+            # Resolver alertas de riesgo si no hay
             db.execute_query("""
                 UPDATE alertas SET id_estado_alerta = %s, fecha_resolucion = NOW()
                 WHERE id_estacion = %s AND id_estado_alerta = %s

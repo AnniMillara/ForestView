@@ -1,6 +1,6 @@
 // =============================================================
-//               FORESTGUARD ESP32 - FIRMWARE V3 (MQ-2 robusto)
-//               Sin falsos positivos, con persistencia e histéresis
+//               FORESTGUARD ESP32 - FIRMWARE V3.6 (MQ-2 equilibrado)
+//               Sensibilidad media, sin falsos positivos
 // =============================================================
 //  Hardware: ESP32 + DHT (3 pines, DHT22 por defecto) + MQ-2 + LED RGB
 //  Backend: Flask + MySQL (sin cambios)
@@ -23,7 +23,7 @@
 //  PINES (MANTENER)
 // =============================================================
 #define DHT_PIN     13
-#define DHT_TYPE    DHT22           // Cambia a DHT11 si usas ese modelo (3 pines)
+#define DHT_TYPE    DHT22           // Cambia a DHT11 si usas ese modelo
 #define MQ2_AO      35
 #define MQ2_DO      33
 #define LED_ROJO    26
@@ -35,7 +35,7 @@
 // =============================================================
 const char* WIFI_SSID_1     = "GameofThrones";
 const char* WIFI_PASS_1     = "elsenordelosanillos";
-const char* WIFI_SSID_2     = "B3ar";
+const char* WIFI_SSID_2     = "b3ar";
 const char* WIFI_PASS_2     = "papyrusB3st";
 const int NUM_NETWORKS = 2;
 const char* WIFI_SSIDS[]   = { WIFI_SSID_1, WIFI_SSID_2 };
@@ -44,7 +44,7 @@ const char* WIFI_PASSWORDS[] = { WIFI_PASS_1, WIFI_PASS_2 };
 // =============================================================
 //  SERVIDOR (MANTENER)
 // =============================================================
-const char* SERVER_IP       = "192.168.18.116";
+const char* SERVER_IP       = "192.168.205.3";
 const int   SERVER_PORT     = 5000;
 const char* DEFAULT_API_KEY = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
 
@@ -58,7 +58,7 @@ const int CANAL_VERDE = 1;
 const int CANAL_AZUL  = 2;
 
 // =============================================================
-//  UMBRALES (ajustables)
+//  UMBRALES (AJUSTADOS: subidos ligeramente respecto a V3.5)
 // =============================================================
 const float TEMP_RIESGO      = 30.0;
 const float TEMP_ALTA        = 35.0;
@@ -67,36 +67,35 @@ const float HUMEDAD_RIESGO   = 45.0;
 const float HUMEDAD_BAJA     = 30.0;
 const float HUMEDAD_CRITICA  = 15.0;
 
-// Umbrales de cambio AO (porcentaje respecto a la línea base)
-// Estos son los valores que se comparan con el % de cambio
-const float HUMO_PORCENTAJE_BAJO   = 15.0;   // >15% = posible humo
-const float HUMO_PORCENTAJE_MEDIO  = 30.0;   // >30% = humo detectado
-const float HUMO_PORCENTAJE_ALTO   = 50.0;   // >50% = humo fuerte
+// Umbrales de cambio AO (porcentaje) - SUBIDOS un poco
+const float HUMO_PORCENTAJE_BAJO   = 10.0;   // antes 8
+const float HUMO_PORCENTAJE_MEDIO  = 22.0;   // antes 18
+const float HUMO_PORCENTAJE_ALTO   = 40.0;   // antes 35
 
-// Histéresis: para salir del estado de humo se necesita bajar por debajo de estos umbrales
-const float HYSTERESIS_PORCENTAJE_BAJO   = 8.0;
-const float HYSTERESIS_PORCENTAJE_MEDIO  = 20.0;
-const float HYSTERESIS_PORCENTAJE_ALTO   = 35.0;
+// Histéresis: también subida para que no baje tan fácilmente
+const float HYSTERESIS_PORCENTAJE_BAJO   = 6.0;   // antes 5
+const float HYSTERESIS_PORCENTAJE_MEDIO  = 14.0;  // antes 12
+const float HYSTERESIS_PORCENTAJE_ALTO   = 28.0;  // antes 25
 
 // =============================================================
-//  CONSTANTES DE TIEMPO Y FILTROS
+//  CONSTANTES DE TIEMPO Y FILTROS (rápidos, se mantienen)
 // =============================================================
-const unsigned long INTERVALO_LECTURA   = 2000;      // 2 s
+const unsigned long INTERVALO_LECTURA   = 1000;      // 1 s
 const unsigned long INTERVALO_ENVIO     = 5000;      // 5 s
-const unsigned long TIEMPO_CALENTAMIENTO_MQ2 = 60000; // 60 s (recomendado por fabricante)
-const unsigned long INTERVALO_RECALIB   = 600000;    // 10 min (solo si estable)
+const unsigned long TIEMPO_CALENTAMIENTO_MQ2 = 60000; // 60 s
+const unsigned long INTERVALO_RECALIB   = 600000;    // 10 min
 const unsigned long TIMEOUT_HTTP        = 5000;      // 5 s
 
 // Tamaños de filtros
 const int MUESTRAS_PROMEDIO_TEMP = 5;
-const int MUESTRAS_PROMEDIO_AO   = 10;               // Mayor filtrado para AO
-const int VENTANA_TENDENCIA      = 6;
+const int MUESTRAS_PROMEDIO_AO   = 5;
+const int VENTANA_TENDENCIA      = 4;
 
-// Persistencia (lecturas consecutivas necesarias para cambiar de estado)
-const int LECTURAS_PARA_POSIBLE   = 2;
-const int LECTURAS_PARA_DETECTADO = 3;
-const int LECTURAS_PARA_FUERTE    = 4;
-const int LECTURAS_PARA_NORMAL    = 3;   // para volver a NORMAL
+// Persistencia (se mantiene la misma)
+const int LECTURAS_PARA_POSIBLE   = 1;
+const int LECTURAS_PARA_DETECTADO = 2;
+const int LECTURAS_PARA_FUERTE    = 3;
+const int LECTURAS_PARA_NORMAL    = 2;
 
 // =============================================================
 //  VARIABLES GLOBALES
@@ -126,7 +125,7 @@ int idxAO = 0;
 bool aoBufferLleno = false;
 int ultimoAOValido = 0;
 
-// Buffers para temperatura (igual que antes)
+// Buffers para temperatura
 float tempBuffer[MUESTRAS_PROMEDIO_TEMP];
 float humBuffer[MUESTRAS_PROMEDIO_TEMP];
 int idxTemp = 0;
@@ -147,11 +146,11 @@ int fallosDHT = 0;
 const int MAX_FALLOS_DHT = 5;
 unsigned long ultimaLecturaDHTok = 0;
 
-// ---- Estado del humo (máquina de estados) ----
+// ---- Estado del humo ----
 enum class NivelHumo : uint8_t { NINGUNO, POSIBLE, DETECTADO, FUERTE };
 NivelHumo nivelHumoActual = NivelHumo::NINGUNO;
-NivelHumo nivelHumoEstable = NivelHumo::NINGUNO;   // estado confirmado con persistencia
-int contadorHumo[4] = {0,0,0,0};   // contadores para cada nivel
+NivelHumo nivelHumoEstable = NivelHumo::NINGUNO;
+int contadorHumo[4] = {0,0,0,0};
 
 // ---- Riesgo ----
 enum class Riesgo : uint8_t { NORMAL, MODERADO, ALTO, ALERTA };
@@ -259,7 +258,6 @@ void precalentarMQ2() {
   }
   unsigned long transcurrido = millis() - inicioPrecalentamiento;
   if (transcurrido < TIEMPO_CALENTAMIENTO_MQ2) {
-    // Mostrar progreso cada 5s
     if (transcurrido % 5000 < 100) {
       Serial.print("[MQ-2] Calentando... ");
       Serial.print(transcurrido / 1000);
@@ -269,12 +267,10 @@ void precalentarMQ2() {
   }
   mq2Precalentado = true;
   Serial.println("[MQ-2] Precalentamiento completado.");
-  // Calibración inicial forzada
   calibrarMQ2("INICIAL", true);
 }
 
 void calibrarMQ2(const char* motivo, bool forzado) {
-  // No recalibrar si hay humo detectado o riesgo alto
   if (!forzado && !deberiaRecalibrar()) {
     Serial.println("[CALIB] Recalibración pospuesta (condiciones inestables o humo presente)");
     recalibracionPendiente = true;
@@ -292,11 +288,11 @@ void calibrarMQ2(const char* motivo, bool forzado) {
   Serial.println("Asegúrate de que el sensor esté en aire limpio.");
   delay(100);
 
-  const int NUM_MUESTRAS = 30;  // más muestras para robustez
+  const int NUM_MUESTRAS = 30;
   long sumaAO = 0;
   int high = 0, low = 0;
   int muestrasValidas = 0;
-  int valores[NUM_MUESTRAS];   // para calcular mediana si es necesario
+  int valores[NUM_MUESTRAS];
 
   for (int i = 0; i < NUM_MUESTRAS; i++) {
     int ao = analogRead(MQ2_AO);
@@ -317,10 +313,6 @@ void calibrarMQ2(const char* motivo, bool forzado) {
     return;
   }
 
-  // Usamos promedio (podríamos usar mediana, pero promedio con descarte de outliers ya está)
-  // Ordenar valores para posible mediana (opcional)
-  // Para simplificar, usamos promedio, pero podríamos descartar el 10% superior e inferior
-  // Aquí usamos promedio simple (ya que tenemos filtrado posterior)
   aoBase = sumaAO / muestrasValidas;
   estadoDONormal = (high >= low) ? HIGH : LOW;
   ultimoAOValido = aoBase;
@@ -336,11 +328,9 @@ void calibrarMQ2(const char* motivo, bool forzado) {
 }
 
 bool deberiaRecalibrar() {
-  // Solo recalibrar si no hay humo, riesgo normal y estación estable
   if (riesgoActual != Riesgo::NORMAL) return false;
   if (nivelHumoEstable != NivelHumo::NINGUNO) return false;
   if (statusMQ2 != SensorStatus::OK) return false;
-  // Si el sistema ha estado estable durante al menos 5 minutos después de la última calibración
   if (millis() - ultimaCalibracion < 300000) return false; // 5 min
   return true;
 }
@@ -349,7 +339,6 @@ bool deberiaRecalibrar() {
 //  LECTURA DHT22 (con validación)
 // =============================================================
 bool leerDHT22(float &temp, float &hum) {
-  // Sin reintentos para no bloquear, la librería ya maneja el timing
   temp = dht.readTemperature();
   hum = dht.readHumidity();
   if (!isnan(temp) && !isnan(hum) && temp >= -40 && temp <= 80 && hum >= 0 && hum <= 100) {
@@ -364,7 +353,6 @@ bool leerDHT22(float &temp, float &hum) {
 void agregarMuestraTemp(float temp, float hum) {
   if (tempBufferLleno) {
     float promTemp = obtenerPromedioTemp(false);
-    // Descartar si se desvía más del 20% del promedio
     if (fabs(temp - promTemp) > 0.2 * promTemp && promTemp > 0) {
       return;
     }
@@ -386,7 +374,6 @@ float obtenerPromedioTemp(bool humedad) {
 }
 
 void agregarMuestraAO(int ao) {
-  // Descartar valores atípicos (más del 30% de desviación respecto al promedio)
   if (aoBufferLleno) {
     int prom = obtenerPromedioAO();
     if (abs(ao - prom) > 0.3 * prom && prom > 0) {
@@ -426,36 +413,35 @@ int calcularTendencia() {
   float denominador = (n * sumaX2 - sumaX * sumaX);
   if (denominador == 0) return 0;
   float pendiente = (n * sumaXY - sumaX * sumaY) / denominador;
-  return (int)(pendiente * 100);  // escala para visualización
+  return (int)(pendiente * 100);
 }
 
 // =============================================================
 //  CLASIFICACIÓN DE HUMO (con persistencia e histéresis)
 // =============================================================
 NivelHumo clasificarHumo(int cambioPorcentaje, bool humoDO) {
-  // Determinar el nivel según los umbrales (con histéresis)
   NivelHumo nivel = NivelHumo::NINGUNO;
 
-  // Usar AO como principal, DO como apoyo
-  if (cambioPorcentaje >= HUMO_PORCENTAJE_ALTO || (humoDO && cambioPorcentaje >= HUMO_PORCENTAJE_MEDIO)) {
+  // Clasificación con prioridad al AO
+  if (cambioPorcentaje >= HUMO_PORCENTAJE_ALTO) {
     nivel = NivelHumo::FUERTE;
-  } else if (cambioPorcentaje >= HUMO_PORCENTAJE_MEDIO || (humoDO && cambioPorcentaje >= HUMO_PORCENTAJE_BAJO)) {
+  } else if (cambioPorcentaje >= HUMO_PORCENTAJE_MEDIO) {
     nivel = NivelHumo::DETECTADO;
-  } else if (cambioPorcentaje >= HUMO_PORCENTAJE_BAJO || humoDO) {
+  } else if (cambioPorcentaje >= HUMO_PORCENTAJE_BAJO) {
+    nivel = NivelHumo::POSIBLE;
+  } else if (humoDO && cambioPorcentaje >= HUMO_PORCENTAJE_BAJO * 0.6) {
     nivel = NivelHumo::POSIBLE;
   }
 
-  // Histéresis: si el nivel actual es inferior al estable, comprobar umbrales de salida
+  // Histéresis (con los nuevos valores)
   if (nivel < nivelHumoEstable) {
-    // Solo bajar si el cambioPorcentaje cae por debajo del umbral de histéresis correspondiente
     switch (nivelHumoEstable) {
       case NivelHumo::FUERTE:
         if (cambioPorcentaje < HYSTERESIS_PORCENTAJE_ALTO) {
-          // Puede bajar a DETECTADO o menos, según el valor
           if (cambioPorcentaje < HYSTERESIS_PORCENTAJE_MEDIO) {
             nivel = NivelHumo::DETECTADO;
           } else {
-            nivel = NivelHumo::FUERTE;  // se mantiene
+            nivel = NivelHumo::FUERTE;
           }
         } else {
           nivel = NivelHumo::FUERTE;
@@ -463,7 +449,6 @@ NivelHumo clasificarHumo(int cambioPorcentaje, bool humoDO) {
         break;
       case NivelHumo::DETECTADO:
         if (cambioPorcentaje < HYSTERESIS_PORCENTAJE_MEDIO) {
-          // Puede bajar a POSIBLE o NINGUNO
           if (cambioPorcentaje < HYSTERESIS_PORCENTAJE_BAJO) {
             nivel = NivelHumo::POSIBLE;
           } else {
@@ -492,7 +477,6 @@ NivelHumo clasificarHumo(int cambioPorcentaje, bool humoDO) {
     if (i != idxNivel) contadorHumo[i] = 0;
   }
 
-  // Determinar umbrales de persistencia para cada nivel
   int umbral;
   switch (nivel) {
     case NivelHumo::POSIBLE:   umbral = LECTURAS_PARA_POSIBLE; break;
@@ -501,11 +485,9 @@ NivelHumo clasificarHumo(int cambioPorcentaje, bool humoDO) {
     default:                   umbral = 2; break;
   }
 
-  // Si se alcanza el umbral, actualizar estado estable
   if (contadorHumo[idxNivel] >= umbral) {
     nivelHumoEstable = nivel;
   } else {
-    // Si el nivel es NINGUNO y tenemos suficientes lecturas de NINGUNO, bajar a NINGUNO
     if (nivel == NivelHumo::NINGUNO && contadorHumo[0] >= LECTURAS_PARA_NORMAL) {
       nivelHumoEstable = NivelHumo::NINGUNO;
     }
@@ -515,7 +497,7 @@ NivelHumo clasificarHumo(int cambioPorcentaje, bool humoDO) {
 }
 
 // =============================================================
-//  EVALUACIÓN DE RIESGO (sin cambios relevantes)
+//  EVALUACIÓN DE RIESGO (sin cambios)
 // =============================================================
 void evaluarRiesgo(float temp, float hum, NivelHumo nivel, int tendencia) {
   bool tempRiesgo = temp >= TEMP_RIESGO;
@@ -528,7 +510,6 @@ void evaluarRiesgo(float temp, float hum, NivelHumo nivel, int tendencia) {
   bool alerta = false, alto = false, moderado = false;
   int conf = 0;
 
-  // Reglas de decisión (igual que antes)
   if (nivel == NivelHumo::FUERTE) {
     alerta = true; conf = 80;
   } else if (nivel == NivelHumo::DETECTADO && tempAlta) {
@@ -608,7 +589,7 @@ void evaluarRiesgo(float temp, float hum, NivelHumo nivel, int tendencia) {
 }
 
 // =============================================================
-//  ENVÍO A FLASK (sin cambios)
+//  ENVÍO A FLASK
 // =============================================================
 void enviarDatos(float temp, float hum, int ao, int base, int cambioPorcentaje, int doVal, NivelHumo nivel, int conf, Riesgo riesgo) {
   if (!wifiConectado) {
@@ -629,7 +610,7 @@ void enviarDatos(float temp, float hum, int ao, int base, int cambioPorcentaje, 
   doc["humedad"] = hum;
   doc["mq2_ao"] = ao;
   doc["mq2_base"] = base;
-  doc["cambio_ao"] = cambioPorcentaje;  // enviamos el porcentaje en lugar de diferencia absoluta
+  doc["cambio_ao"] = cambioPorcentaje;
   doc["mq2_do"] = doVal;
   doc["nivel_humo"] = (int)nivel;
   doc["mac"] = stationCode;
@@ -657,7 +638,7 @@ void enviarDatos(float temp, float hum, int ao, int base, int cambioPorcentaje, 
 }
 
 // =============================================================
-//  WIFI (MULTI-RED) - sin cambios
+//  WIFI (MULTI-RED)
 // =============================================================
 void conectarWiFi() {
   Serial.println();
@@ -721,7 +702,7 @@ void comprobarWiFi() {
 }
 
 // =============================================================
-//  DIAGNÓSTICO SERIAL MEJORADO
+//  DIAGNÓSTICO SERIAL
 // =============================================================
 void serialDiagnostico(float temp, float hum, int ao, int base, int cambioAbs, int cambioPorcentaje, int doVal, NivelHumo nivel, int tendencia, int conf, Riesgo riesgo) {
   Serial.println();
@@ -783,8 +764,8 @@ void setup() {
 
   Serial.println();
   Serial.println("======================================");
-  Serial.println("           FORESTGUARD V3");
-  Serial.println("      SISTEMA DE MONITOREO");
+  Serial.println("           FORESTGUARD V3.6");
+  Serial.println("      SISTEMA DE MONITOREO EQUILIBRADO");
   Serial.println("======================================");
 
   // Inicializar LED PWM
@@ -847,7 +828,7 @@ void setup() {
   }
   Serial.print("[DIAG] MQ-2 DO = "); Serial.println(doVal);
 
-  // Iniciar precalentamiento (no calibra aún)
+  // Iniciar precalentamiento
   precalentarMQ2();
 
   // WiFi
@@ -880,14 +861,12 @@ void loop() {
 
   comprobarWiFi();
 
-  // Precalentamiento (no hacer nada hasta que termine)
   if (!mq2Precalentado) {
     precalentarMQ2();
     actualizarLED();
     return;
   }
 
-  // Recalibración periódica condicional
   if (millis() - ultimaCalibracion > INTERVALO_RECALIB && !recalibracionPendiente) {
     if (deberiaRecalibrar()) {
       calibrarMQ2("PERIODICA", false);
@@ -896,7 +875,6 @@ void loop() {
     }
   }
 
-  // Lectura de sensores cada INTERVALO_LECTURA
   if (millis() - ultimaLectura < INTERVALO_LECTURA) {
     actualizarLED();
     return;
@@ -933,7 +911,6 @@ void loop() {
   int aoFiltrado = obtenerPromedioAO();
   int doVal = digitalRead(MQ2_DO);
 
-  // Calcular cambio absoluto y porcentaje
   int cambioAbs = abs(aoFiltrado - aoBase);
   int cambioPorcentaje = 0;
   if (aoBase != 0) {
@@ -942,7 +919,6 @@ void loop() {
     cambioPorcentaje = 0;
   }
 
-  // Determinar si DO indica humo (con debounce)
   bool humoDO = (doVal != estadoDONormal);
 
   // ---- TENDENCIA ----
