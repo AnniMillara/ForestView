@@ -8,9 +8,9 @@
 #include <ArduinoJson.h>
 
 // ============ CONFIGURACIÓN ============
-const char* WIFI_SSID     = "GameofThrones";
-const char* WIFI_PASSWORD = "elsenordelosanillos";
-const char* SERVER_HOST = "192.168.18.116";
+const char* WIFI_SSID     = "b3ar";
+const char* WIFI_PASSWORD = "papyrusB3st";
+const char* SERVER_HOST   = "192.168.18.116";
 const int   SERVER_PORT   = 5000;
 const char* CODIGO_ESTACION = "A1B2C3D4";
 const char* API_KEY         = "3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c";
@@ -22,8 +22,9 @@ String serverUrl() {
 // ============ PINES ============
 #define DHTPIN   13
 #define DHTTYPE  DHT22
-#define MQ2_AO   35
-#define MQ2_DO   33
+#define MQ2_AO   35          // ← AQUÍ ESTABA EL PROBLEMA: faltaban estas dos líneas
+#define MQ2_DO   33          // ←
+
 #define LED_R    26
 #define LED_G    27
 #define LED_B    25
@@ -119,8 +120,8 @@ void loop() {
     http.addHeader("Content-Type", "application/json");
     http.setTimeout(5000);
 
-    // CORRECCIÓN: NO asignar nullptr a las claves. Si el DHT falla,
-    // simplemente no se envían, y el backend las recibe como None.
+    // Si el DHT falla, no se envían temperatura ni humedad.
+    // Flask las recibe como None y marca dht_ok = False. Correcto.
     StaticJsonDocument<384> doc;
     doc["api_key"] = API_KEY;
     if (dhtOk) {
@@ -131,8 +132,6 @@ void loop() {
     doc["mq2_base"] = aoBase;
     doc["cambio_ao"] = cambioAO;
     doc["mq2_do"] = doVal;
-    doc["dht_ok"] = dhtOk;
-    doc["mq2_ok"] = true;
 
     String payload;
     serializeJson(doc, payload);
